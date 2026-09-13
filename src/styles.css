@@ -298,6 +298,123 @@ kbd { margin-left: 6px; padding: 3px 6px; border: 1px solid rgba(255,255,255,.14
   .exercise-card.quiz-card { min-height: 500px; padding-inline: 20px; }
 }
 
+.account-pill { display: flex; align-items: center; gap: 9px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 12px; color: var(--blue); background: rgba(120,166,255,.055); }
+.account-pill > span { min-width: 0; }
+.account-pill b, .account-pill small { display: block; max-width: 145px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-pill b { color: var(--ink); font-size: .72rem; }
+.account-pill small { margin-top: 2px; color: var(--muted); font-size: .62rem; }
+.icon-button { display: grid; place-items: center; width: 40px; aspect-ratio: 1; border: 1px solid var(--line); border-radius: 12px; color: var(--muted); background: rgba(255,255,255,.035); cursor: pointer; }
+.icon-button:hover { color: var(--ink); background: rgba(255,255,255,.075); }
+.student-manage-shortcut { display: none; }
+
+.sidebar-nav { display: grid; gap: 6px; margin: -10px 0 27px; padding-bottom: 22px; border-bottom: 1px solid var(--line); }
+.sidebar-nav button { width: 100%; min-height: 42px; display: flex; align-items: center; gap: 9px; padding: 0 11px; border: 1px solid transparent; border-radius: 11px; color: var(--muted); text-align: left; background: transparent; cursor: pointer; font-size: .75rem; font-weight: 750; }
+.sidebar-nav button:hover, .sidebar-nav button.active { border-color: var(--line); color: var(--ink); background: var(--panel-2); }
+.sidebar-nav button.active { color: var(--lime); }
+.sidebar-nav button span { margin-left: auto; min-width: 24px; padding: 3px 6px; border-radius: 99px; text-align: center; color: var(--ink); background: rgba(255,255,255,.08); font-size: .62rem; }
+
+.auth-screen { min-height: 100vh; display: grid; place-items: center; padding: 32px; background: radial-gradient(circle at 20% 25%, rgba(199,255,85,.1), transparent 29rem), radial-gradient(circle at 82% 72%, rgba(120,166,255,.13), transparent 32rem), #0c1020; }
+.auth-screen::before { content: ""; position: fixed; inset: 0; pointer-events: none; background-image: linear-gradient(rgba(255,255,255,.024) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.024) 1px, transparent 1px); background-size: 38px 38px; mask-image: linear-gradient(to bottom, black, transparent 85%); }
+.auth-loading { position: relative; display: flex; align-items: center; gap: 14px; color: var(--muted); font-weight: 700; }
+.login-layout { position: relative; width: min(1000px, 100%); display: grid; grid-template-columns: 1.05fr .95fr; align-items: center; gap: 72px; }
+.login-intro { padding: 20px; }
+.login-intro .brand-mark { width: 48px; margin-bottom: 34px; }
+.login-intro h1 { margin: 13px 0 20px; font-size: clamp(2.8rem, 6vw, 5.2rem); line-height: .98; letter-spacing: -.075em; }
+.login-intro h1 span { color: var(--lime); }
+.login-intro > p { max-width: 530px; margin: 0; color: var(--muted); font-size: 1rem; line-height: 1.75; }
+.login-features { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 31px; }
+.login-features span { display: flex; align-items: center; gap: 7px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; color: #cfd6e8; background: rgba(255,255,255,.035); font-size: .76rem; font-weight: 700; }
+.login-features svg { color: var(--lime); }
+.login-card { padding: 31px; border: 1px solid rgba(255,255,255,.13); border-radius: 25px; background: linear-gradient(150deg, rgba(27,35,62,.98), rgba(16,22,41,.98)); box-shadow: 0 30px 95px rgba(0,0,0,.36); }
+.login-card h2 { margin: 8px 0 22px; font-size: 1.45rem; letter-spacing: -.035em; }
+.role-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 23px; padding: 5px; border: 1px solid var(--line); border-radius: 13px; background: rgba(7,11,25,.4); }
+.role-switch button { min-height: 43px; display: flex; align-items: center; justify-content: center; gap: 8px; border: 0; border-radius: 9px; color: var(--muted); background: transparent; cursor: pointer; font-size: .8rem; font-weight: 750; }
+.role-switch button.active { color: #0d1324; background: var(--lime); }
+.auth-input { width: 100%; height: 50px; padding: 0 14px; border: 1px solid rgba(255,255,255,.13); border-radius: 12px; color: var(--ink); background: rgba(7,11,25,.48); font-size: .88rem; }
+.auth-input::placeholder { color: #69738f; }
+.login-card .field-label { margin-top: 15px; }
+.password-field { position: relative; }
+.password-field .auth-input { padding-right: 50px; }
+.password-field button { position: absolute; right: 7px; top: 7px; width: 36px; height: 36px; display: grid; place-items: center; border: 0; border-radius: 9px; color: var(--muted); background: transparent; cursor: pointer; }
+.password-field button:hover { color: var(--ink); background: rgba(255,255,255,.06); }
+.login-error { display: flex; align-items: flex-start; gap: 8px; margin-top: 14px; padding: 10px 12px; border: 1px solid rgba(255,112,94,.25); border-radius: 10px; color: #ffc1b7; background: rgba(255,112,94,.08); font-size: .74rem; line-height: 1.5; }
+.login-error svg { flex: 0 0 auto; margin-top: 1px; }
+.login-submit { width: 100%; margin-top: 20px; }
+.login-note { margin: 15px 6px 0; color: var(--muted); text-align: center; font-size: .68rem; line-height: 1.55; }
+
+.instructor-view { animation: enter .3s ease-out; }
+.instructor-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
+.instructor-head h1 { margin: 7px 0 0; font-size: clamp(1.8rem, 4vw, 2.5rem); letter-spacing: -.05em; }
+.instructor-head p { margin: 8px 0 0; color: var(--muted); font-size: .82rem; }
+.student-count { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid rgba(120,166,255,.22); border-radius: 13px; color: var(--blue); background: rgba(120,166,255,.06); }
+.student-count span { color: var(--muted); font-size: .72rem; }
+.student-count strong { margin-right: 4px; color: var(--ink); font-size: 1rem; }
+.demo-banner { display: flex; align-items: center; gap: 9px; margin-top: 20px; padding: 12px 14px; border: 1px solid rgba(241,195,95,.25); border-radius: 12px; color: #f5d994; background: rgba(241,195,95,.07); font-size: .75rem; }
+.teacher-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(280px, .75fr); gap: 15px; margin-top: 24px; }
+.account-generator, .export-panel, .new-accounts, .student-directory { border: 1px solid var(--line); border-radius: 20px; background: linear-gradient(145deg, rgba(26,34,60,.96), rgba(17,23,42,.96)); }
+.account-generator { padding: 22px; }
+.generator-title { display: flex; align-items: center; gap: 12px; margin-bottom: 19px; }
+.generator-title > span { display: grid; place-items: center; width: 42px; aspect-ratio: 1; border-radius: 12px; color: #101529; background: var(--lime); }
+.generator-title h2, .export-panel h2, .table-title h2 { margin: 0; font-size: 1.08rem; letter-spacing: -.025em; }
+.generator-title p, .export-panel p { margin: 5px 0 0; color: var(--muted); font-size: .7rem; line-height: 1.55; }
+.generator-fields { display: grid; grid-template-columns: 1fr 120px; gap: 10px; margin-top: 12px; }
+.generator-fields label > span { display: block; margin: 0 0 8px; color: var(--muted); font-size: .7rem; font-weight: 700; }
+.generator-submit { width: 100%; margin-top: 16px; }
+.export-panel { display: flex; flex-direction: column; align-items: flex-start; padding: 23px; }
+.export-icon { display: grid; place-items: center; width: 47px; aspect-ratio: 1; margin-bottom: auto; border: 1px solid rgba(120,166,255,.25); border-radius: 13px; color: var(--blue); background: rgba(120,166,255,.08); }
+.export-panel .eyebrow { margin-top: 30px; }
+.export-panel h2 { margin-top: 7px; }
+.export-panel .secondary-button { width: 100%; margin-top: 18px; }
+.new-accounts, .student-directory { margin-top: 16px; padding: 20px; }
+.new-accounts { border-color: rgba(199,255,85,.2); }
+.table-title { display: flex; align-items: center; justify-content: space-between; gap: 15px; margin-bottom: 15px; }
+.table-title h2 { margin-top: 5px; }
+.table-title > span { color: var(--muted); font-size: .7rem; }
+.password-toggle { min-height: 38px; padding-inline: 12px; font-size: .72rem; }
+.student-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 13px; }
+.student-table { width: 100%; border-collapse: collapse; min-width: 650px; }
+.student-table th { height: 42px; padding: 0 12px; color: #dce3f3; text-align: left; background: #202a49; font-size: .66rem; letter-spacing: .06em; text-transform: uppercase; }
+.student-table td { height: 46px; padding: 0 12px; border-top: 1px solid var(--line); color: #cad1e3; font-size: .76rem; }
+.student-table tbody tr:hover { background: rgba(255,255,255,.025); }
+.student-table code { color: var(--lime); font-family: "Cascadia Code", monospace; font-size: .72rem; }
+.empty-students { display: flex; min-height: 155px; flex-direction: column; align-items: center; justify-content: center; color: var(--muted); text-align: center; }
+.empty-students svg { margin-bottom: 12px; color: var(--blue); }
+.empty-students strong { color: var(--ink); font-size: .86rem; }
+.empty-students span { margin-top: 6px; font-size: .7rem; }
+
+@media (max-width: 850px) {
+  .account-pill { display: none; }
+  .login-layout { grid-template-columns: 1fr; gap: 28px; width: min(520px, 100%); }
+  .login-intro { padding: 0 8px; }
+  .login-intro .brand-mark { margin-bottom: 18px; }
+  .login-intro h1 { margin-block: 10px 14px; font-size: clamp(2.35rem, 10vw, 3.8rem); }
+  .login-intro > p { font-size: .88rem; }
+  .login-features { margin-top: 20px; }
+  .teacher-grid { grid-template-columns: 1fr; }
+  .export-icon { margin-bottom: 28px; }
+  .export-panel .eyebrow { margin-top: 0; }
+}
+
+@media (max-width: 700px) {
+  .student-manage-shortcut { display: grid; }
+  .auth-screen { align-items: start; padding: 27px 15px; }
+  .login-intro { display: none; }
+  .login-card { margin-top: 5vh; padding: 24px 18px; border-radius: 20px; }
+  .topbar-actions { gap: 8px; }
+  .instructor-head { align-items: flex-start; flex-direction: column; }
+  .student-count { width: 100%; }
+  .teacher-grid { margin-top: 18px; }
+  .generator-fields { grid-template-columns: 1fr; }
+  .table-title { align-items: flex-start; flex-direction: column; }
+  .password-toggle { width: 100%; }
+}
+
+@media (max-width: 430px) {
+  .brand > span:last-child { display: none; }
+  .login-card h2 { font-size: 1.25rem; }
+  .role-switch button { font-size: .72rem; }
+}
+
 @media (max-width: 460px) {
   .brand > span:last-child { font-size: .8rem; }
   .primary-button.compact { width: 44px; padding: 0; font-size: 0; }

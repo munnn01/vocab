@@ -21,10 +21,99 @@ async function requireUser() {
   const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
   if (sessionError) throw sessionError;
   if (sessionData.session?.user) return sessionData.session.user;
+  throw new Error("Phiên đăng nhập đã hết hạn.");
+}
 
-  const { data, error } = await supabase.auth.signInAnonymously();
+function toAccount(profile, user) {
+  return {
+    id: user.id,
+    email: user.email,
+    role: profile.role,
+    username: profile.username,
+    displayName: profile.display_name || (profile.role === "instructor" ? user.email : profile.username),
+    className: profile.class_name,
+    instructorId: profile.instructor_id,
+  };
+}
+
+async function loadProfile(user) {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("user_id,role,username,display_name,class_name,instructor_id")
+    .eq("user_id", user.id)
+    .single();
   if (error) throw error;
-  return data.user;
+  return toAccount(data, user);
+}
+
+export async function getCurrentAccount() {
+  if (!supabase) return null;
+  const { data, error } = await supabase.auth.getSession();
+  if (error) throw error;
+  const user = data.session?.user;
+  if (!user) return null;
+  if (user.is_anonymous) {
+    await supabase.auth.signOut();
+    return null;
+  }
+  return loadProfile(user);
+}
+
+export async function signIn({ role, identifier, password }) {
+  if (!supabase) throw new Error("Supabase chưa được cấu hình.");
+  const cleanIdentifier = identifier.trim().toLowerCase();
+  const email = role === "student"
+    ? `${cleanIdentifier}@students.vocab.local`
+    : cleanIdentifier;
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) throw new Error("Tên đăng nhập hoặc mật khẩu chưa đúng.");
+  const account = await loadProfile(data.user);
+  if (account.role !== role) {
+    await supabase.auth.signOut();
+    throw new Error(`Tài khoản này không phải tài khoản ${role === "instructor" ? "giảng viên" : "sinh viên"}.`);
+  }
+  if (role === "student" && !account.instructorId) {
+    await supabase.auth.signOut();
+    throw new Error("Tài khoản sinh viên chưa được gán cho giảng viên.");
+  }
+  return account;
+}
+
+export async function signOut() {
+  if (supabase) await supabase.auth.signOut();
+}
+
+export async function loadStudents() {
+  const user = await requireUser();
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("user_id,username,display_name,class_name,created_at")
+    .eq("instructor_id", user.id)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data || []).map((student) => ({
+    id: student.user_id,
+    username: student.username,
+    displayName: student.display_name,
+    className: student.class_name,
+    createdAt: student.created_at,
+  }));
+}
+
+export async function createStudentAccounts({ className, prefix, count }) {
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError || !sessionData.session) throw new Error("Phiên đăng nhập đã hết hạn.");
+  const response = await fetch("/api/create-students", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${sessionData.session.access_token}`,
+    },
+    body: JSON.stringify({ className, prefix, count }),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.error || "Không thể tạo tài khoản sinh viên.");
+  return result.accounts;
 }
 
 function toClientWord(word) {
@@ -43,7 +132,6 @@ export async function loadLibrary() {
       supabase
         .from("decks")
         .select("id,title,source_file_name,word_count,created_at,words(id,term,part_of_speech,meaning,position)")
-        .eq("owner_id", user.id)
         .order("created_at", { ascending: false }),
       supabase
         .from("study_sessions")

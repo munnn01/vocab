@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft, BookOpen, BrainCircuit, Check, ChevronRight, CircleAlert, FileText,
-  FileUp, Flame, Keyboard, Layers3, LoaderCircle, Maximize2, Minimize2,
-  MousePointerClick, Plus, RotateCcw, Sparkles, Trash2, Trophy, X,
+  Download, Eye, EyeOff, FileUp, Flame, GraduationCap, Keyboard, Layers3,
+  LoaderCircle, LogOut, Maximize2, Minimize2, MousePointerClick, Plus,
+  RotateCcw, ShieldCheck, Sparkles, Trash2, Trophy, UserPlus, Users, X,
 } from "lucide-react";
 import { DEMO_WORDS, POS_LABELS, makeQuizChoices, normalizeAnswer, shuffle } from "./lib/vocabulary";
-import { createDeck, isSupabaseConfigured, loadLibrary, saveStudySession } from "./lib/supabase";
+import {
+  createDeck, createStudentAccounts, getCurrentAccount, isSupabaseConfigured,
+  loadLibrary, loadStudents, saveStudySession, signIn, signOut,
+} from "./lib/supabase";
+import { createDemoStudentAccounts, downloadStudentAccountsXlsx } from "./lib/studentAccounts";
 
 const DEMO_DECK = {
   id: "demo",
@@ -36,8 +41,18 @@ export function App() {
   const toastTimerRef = useRef(null);
   const answerTimerRef = useRef(null);
   const [view, setView] = useState("home");
+  const [account, setAccount] = useState(isSupabaseConfigured ? null : {
+    id: "demo-instructor",
+    role: "instructor",
+    displayName: "Giảng viên demo",
+    demo: true,
+  });
+  const [authStatus, setAuthStatus] = useState(isSupabaseConfigured ? "loading" : "ready");
   const [decks, setDecks] = useState([DEMO_DECK]);
   const [sessions, setSessions] = useState([]);
+  const [students, setStudents] = useState([]);
+  const [generatedAccounts, setGeneratedAccounts] = useState([]);
+  const [isGeneratingAccounts, setIsGeneratingAccounts] = useState(false);
   const [selectedDeckId, setSelectedDeckId] = useState("demo");
   const [connection, setConnection] = useState(isSupabaseConfigured ? "connecting" : "demo");
   const [importProgress, setImportProgress] = useState(0);
@@ -73,22 +88,40 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (!isSupabaseConfigured) return;
+    if (!isSupabaseConfigured) return undefined;
     let active = true;
-    loadLibrary()
-      .then((library) => {
-        if (!active) return;
-        setDecks([DEMO_DECK, ...library.decks]);
-        setSessions(library.sessions);
-        if (library.decks[0]) setSelectedDeckId(library.decks[0].id);
-        setConnection("connected");
+    getCurrentAccount()
+      .then((currentAccount) => {
+        if (active) setAccount(currentAccount);
       })
       .catch((error) => {
-        console.error("Không thể kết nối Supabase", error);
-        if (active) setConnection("error");
-      });
+        console.error("Không thể kiểm tra phiên đăng nhập", error);
+        if (active) setAccount(null);
+      })
+      .finally(() => { if (active) setAuthStatus("ready"); });
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    if (!account || account.demo) return undefined;
+    let active = true;
+    setConnection("connecting");
+    Promise.all([
+      loadLibrary(),
+      account.role === "instructor" ? loadStudents() : Promise.resolve([]),
+    ]).then(([library, studentList]) => {
+      if (!active) return;
+      setDecks([DEMO_DECK, ...library.decks]);
+      setSessions(library.sessions);
+      setStudents(studentList);
+      if (library.decks[0]) setSelectedDeckId(library.decks[0].id);
+      setConnection("connected");
+    }).catch((error) => {
+      console.error("Không thể kết nối Supabase", error);
+      if (active) setConnection("error");
+    });
+    return () => { active = false; };
+  }, [account?.id, account?.role]);
 
   useEffect(() => {
     const onFullscreenChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
@@ -334,6 +367,64 @@ export function App() {
     }
   }
 
+  async function handleLogin(credentials) {
+    const loggedInAccount = await signIn(credentials);
+    setAccount(loggedInAccount);
+    setView("home");
+    setGeneratedAccounts([]);
+  }
+
+  async function handleSignOut() {
+    if (view === "study") {
+      setLeaveDialog(true);
+      return;
+    }
+    await signOut();
+    setAccount(null);
+    setDecks([DEMO_DECK]);
+    setSessions([]);
+    setStudents([]);
+    setGeneratedAccounts([]);
+    setSelectedDeckId("demo");
+    setView("home");
+  }
+
+  async function handleGenerateStudents(values) {
+    setIsGeneratingAccounts(true);
+    try {
+      const accounts = account.demo
+        ? createDemoStudentAccounts(values)
+        : await createStudentAccounts(values);
+      setGeneratedAccounts(accounts);
+      setStudents((current) => {
+        const next = accounts.map(({ password: _password, ...student }) => student);
+        const ids = new Set(next.map((student) => student.id));
+        return [...next, ...current.filter((student) => !ids.has(student.id))];
+      });
+      showToast(`Đã tạo ${accounts.length} tài khoản. Hãy xuất Excel ngay để lưu mật khẩu.`);
+      return accounts;
+    } finally {
+      setIsGeneratingAccounts(false);
+    }
+  }
+
+  function handleExportStudents() {
+    if (!generatedAccounts.length) {
+      showToast("Hãy tạo một đợt tài khoản mới trước khi xuất Excel.");
+      return;
+    }
+    downloadStudentAccountsXlsx(generatedAccounts, {
+      className: generatedAccounts[0].className,
+      loginUrl: window.location.origin,
+    });
+    showToast("Đã tải file Excel chứa tài khoản sinh viên.");
+  }
+
+  if (authStatus === "loading") return <LoadingScreen />;
+  if (isSupabaseConfigured && !account) return <LoginView onLogin={handleLogin} />;
+
+  const canManage = account?.role === "instructor";
+
   const connectionLabel = {
     connecting: "Đang kết nối",
     connected: "Đã lưu Supabase",
@@ -343,7 +434,7 @@ export function App() {
 
   return (
     <div className="app-shell">
-      <input ref={fileInputRef} className="visually-hidden" type="file" accept="application/pdf,.pdf" onChange={(event) => handlePdf(event.target.files?.[0])} />
+      {canManage && <input ref={fileInputRef} className="visually-hidden" type="file" accept="application/pdf,.pdf" onChange={(event) => handlePdf(event.target.files?.[0])} />}
 
       <header className="topbar">
         <button className="brand" type="button" onClick={() => (view === "study" ? setLeaveDialog(true) : setView("home"))} aria-label="Về trang bộ từ">
@@ -352,10 +443,16 @@ export function App() {
         </button>
         <div className="topbar-actions">
           <span className={`sync-pill ${connection}`}><span /> {connectionLabel}</span>
+          <span className="account-pill">
+            {canManage ? <ShieldCheck size={17} /> : <GraduationCap size={17} />}
+            <span><b>{account.displayName}</b><small>{canManage ? "Giảng viên" : account.className || "Sinh viên"}</small></span>
+          </span>
+          {canManage && <button className="icon-button student-manage-shortcut" type="button" onClick={() => setView((current) => current === "students" ? "home" : "students")} aria-label={view === "students" ? "Mở khu vực học" : "Quản lý sinh viên"} title="Quản lý sinh viên"><Users size={18} /></button>}
           <button className="icon-text-button" type="button" onClick={toggleFullscreen}>
             {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
             {isFullscreen ? "Thu nhỏ" : "Toàn màn hình"}
           </button>
+          {!account.demo && <button className="icon-button" type="button" onClick={handleSignOut} aria-label="Đăng xuất" title="Đăng xuất"><LogOut size={18} /></button>}
         </div>
       </header>
 
@@ -369,9 +466,14 @@ export function App() {
             <p>{totalWords ? `${totalWords} từ đã lưu trong ${uploadedDecks.length} bộ từ.` : "Nhập PDF đầu tiên để bắt đầu lưu tiến độ."}</p>
           </div>
 
+          <nav className="sidebar-nav" aria-label="Khu vực ứng dụng">
+            <button className={view !== "students" ? "active" : ""} type="button" onClick={() => setView("home")}><BookOpen size={17} /> Học từ vựng</button>
+            {canManage && <button className={view === "students" ? "active" : ""} type="button" onClick={() => setView("students")}><Users size={17} /> Tài khoản sinh viên <span>{students.length}</span></button>}
+          </nav>
+
           <div className="section-heading">
-            <span>Bộ từ của bạn</span>
-            <button type="button" onClick={() => fileInputRef.current?.click()} aria-label="Nhập PDF mới"><Plus size={15} /></button>
+            <span>{canManage ? "Bộ từ của bạn" : "Bộ từ của lớp"}</span>
+            {canManage && <button type="button" onClick={() => fileInputRef.current?.click()} aria-label="Nhập PDF mới"><Plus size={15} /></button>}
           </div>
           <div className="deck-list">
             {decks.map((deck, index) => (
@@ -384,12 +486,13 @@ export function App() {
               </button>
             ))}
           </div>
-          <button className="upload-mini" type="button" onClick={() => fileInputRef.current?.click()}><FileUp size={18} /> Nhập PDF mới</button>
-          <p className="format-tip">Mỗi dòng theo mẫu<br /><code>new(adj): mới</code></p>
+          {canManage && <><button className="upload-mini" type="button" onClick={() => fileInputRef.current?.click()}><FileUp size={18} /> Nhập PDF mới</button>
+          <p className="format-tip">Mỗi dòng theo mẫu<br /><code>new(adj): mới</code></p></>}
         </aside>
 
         <section className="content-stage">
-          {view === "home" && <HomeView deck={selectedDeck} isImporting={isImporting} importProgress={importProgress} onPickPdf={() => fileInputRef.current?.click()} onStart={startStudy} />}
+          {view === "home" && <HomeView deck={selectedDeck} canManage={canManage} isImporting={isImporting} importProgress={importProgress} onPickPdf={() => fileInputRef.current?.click()} onStart={startStudy} />}
+          {view === "students" && canManage && <InstructorView students={students} generatedAccounts={generatedAccounts} isGenerating={isGeneratingAccounts} isDemo={Boolean(account.demo)} onGenerate={handleGenerateStudents} onExport={handleExportStudents} />}
           {view === "import" && importDraft && <ImportView draft={importDraft} isSaving={isSaving} connection={connection} onBack={() => setView("home")} onChangeTitle={(title) => setImportDraft((draft) => ({ ...draft, title }))} onRemoveWord={removeDraftWord} onSave={saveImport} />}
           {view === "study" && study && currentWord && <StudyView study={study} currentWord={currentWord} quizChoices={quizChoices} typingInputRef={typingInputRef} onBack={() => setLeaveDialog(true)} onModeChange={changeStudyMode} onFlip={() => setStudy((current) => ({ ...current, flipped: !current.flipped }))} onAnswer={answerCurrent} onInput={(input) => setStudy((current) => ({ ...current, input }))} onTypingSubmit={submitTyping} />}
           {view === "results" && lastResult && <ResultView result={lastResult} onAgain={() => startStudy(lastResult.mode)} onHome={() => setView("home")} />}
@@ -417,7 +520,126 @@ export function App() {
   );
 }
 
-function HomeView({ deck, isImporting, importProgress, onPickPdf, onStart }) {
+function LoadingScreen() {
+  return <div className="auth-screen"><div className="auth-loading"><span className="brand-mark"><Layers3 size={21} /></span><LoaderCircle className="spin" size={24} /><span>Đang mở lớp học…</span></div></div>;
+}
+
+function LoginView({ onLogin }) {
+  const [role, setRole] = useState("instructor");
+  const [identifier, setIdentifier] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(event) {
+    event.preventDefault();
+    setError("");
+    setIsSubmitting(true);
+    try {
+      await onLogin({ role, identifier, password });
+    } catch (loginError) {
+      setError(loginError.message || "Không thể đăng nhập.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="auth-screen">
+      <div className="login-layout">
+        <section className="login-intro">
+          <span className="brand-mark"><Layers3 size={23} /></span>
+          <div className="eyebrow">Từ Vựng Mỗi Ngày</div>
+          <h1>Một lớp học.<br /><span>Ba cách ghi nhớ.</span></h1>
+          <p>Giảng viên đưa PDF lên, sinh viên đăng nhập bằng tài khoản được cấp và bắt đầu học ngay.</p>
+          <div className="login-features"><span><Check size={16} /> Flashcard</span><span><Check size={16} /> Gõ từ</span><span><Check size={16} /> Trắc nghiệm</span></div>
+        </section>
+        <form className="login-card" onSubmit={submit}>
+          <div className="eyebrow">Đăng nhập</div>
+          <h2>Chọn đúng vai trò của bạn</h2>
+          <div className="role-switch" role="tablist" aria-label="Vai trò đăng nhập">
+            <button className={role === "instructor" ? "active" : ""} type="button" onClick={() => { setRole("instructor"); setIdentifier(""); setError(""); }}><ShieldCheck size={18} /> Giảng viên</button>
+            <button className={role === "student" ? "active" : ""} type="button" onClick={() => { setRole("student"); setIdentifier(""); setError(""); }}><GraduationCap size={18} /> Sinh viên</button>
+          </div>
+          <label className="field-label" htmlFor="login-identifier">{role === "instructor" ? "Email giảng viên" : "Tên đăng nhập"}</label>
+          <input id="login-identifier" className="auth-input" type={role === "instructor" ? "email" : "text"} value={identifier} onChange={(event) => setIdentifier(event.target.value)} placeholder={role === "instructor" ? "giangvien@truong.edu.vn" : "12a1-k7m4p2"} autoComplete="username" required />
+          <label className="field-label" htmlFor="login-password">Mật khẩu</label>
+          <div className="password-field">
+            <input id="login-password" className="auth-input" type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Nhập mật khẩu" autoComplete="current-password" required />
+            <button type="button" onClick={() => setShowPassword((shown) => !shown)} aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button>
+          </div>
+          {error && <div className="login-error" role="alert"><CircleAlert size={17} /> {error}</div>}
+          <button className="primary-button login-submit" type="submit" disabled={isSubmitting || !identifier.trim() || !password}>{isSubmitting ? <LoaderCircle className="spin" size={18} /> : <ChevronRight size={18} />}{isSubmitting ? "Đang đăng nhập…" : `Vào khu vực ${role === "instructor" ? "giảng viên" : "sinh viên"}`}</button>
+          <p className="login-note">Sinh viên dùng đúng tên đăng nhập và mật khẩu trong file được giảng viên cấp.</p>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function InstructorView({ students, generatedAccounts, isGenerating, isDemo, onGenerate, onExport }) {
+  const [className, setClassName] = useState("");
+  const [prefix, setPrefix] = useState("");
+  const [count, setCount] = useState(10);
+  const [showPasswords, setShowPasswords] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(event) {
+    event.preventDefault();
+    setError("");
+    try {
+      await onGenerate({ className: className.trim(), prefix: prefix.trim(), count: Number(count) });
+    } catch (generationError) {
+      setError(generationError.message || "Không thể tạo tài khoản.");
+    }
+  }
+
+  return (
+    <div className="instructor-view">
+      <div className="instructor-head">
+        <div><div className="eyebrow">Khu vực giảng viên</div><h1>Tài khoản sinh viên</h1><p>Tạo theo lớp, tải một file Excel rồi cấp riêng cho từng sinh viên.</p></div>
+        <div className="student-count"><Users size={22} /><span><strong>{students.length}</strong> sinh viên đã tạo</span></div>
+      </div>
+
+      {isDemo && <div className="demo-banner"><CircleAlert size={18} /><span>Đây là bản xem thử. Tài khoản tạo ở đây chỉ để kiểm tra giao diện và file Excel.</span></div>}
+
+      <div className="teacher-grid">
+        <form className="account-generator" onSubmit={submit}>
+          <div className="generator-title"><span><UserPlus size={20} /></span><div><h2>Tạo một đợt tài khoản</h2><p>Mỗi tài khoản có tên đăng nhập và mật khẩu ngẫu nhiên.</p></div></div>
+          <label className="field-label" htmlFor="class-name">Tên lớp</label>
+          <input id="class-name" className="auth-input" value={className} onChange={(event) => setClassName(event.target.value)} maxLength={80} placeholder="Ví dụ: Lớp 12A1" required />
+          <div className="generator-fields">
+            <label><span>Tiền tố tên đăng nhập</span><input className="auth-input" value={prefix} onChange={(event) => setPrefix(event.target.value)} maxLength={16} placeholder="Để trống = tên lớp" /></label>
+            <label><span>Số lượng</span><input className="auth-input" type="number" min="1" max="50" value={count} onChange={(event) => setCount(event.target.value)} required /></label>
+          </div>
+          {error && <div className="login-error" role="alert"><CircleAlert size={17} /> {error}</div>}
+          <button className="primary-button generator-submit" type="submit" disabled={isGenerating || !className.trim()}>{isGenerating ? <LoaderCircle className="spin" size={18} /> : <UserPlus size={18} />}{isGenerating ? "Đang tạo tài khoản…" : "Tạo tài khoản ngẫu nhiên"}</button>
+        </form>
+
+        <section className="export-panel">
+          <span className="export-icon"><Download size={23} /></span>
+          <div className="eyebrow">File cấp cho sinh viên</div>
+          <h2>{generatedAccounts.length ? `${generatedAccounts.length} tài khoản sẵn sàng` : "Chưa có đợt mới"}</h2>
+          <p>Mật khẩu chỉ được trả về ở lần tạo này. Hãy xuất Excel trước khi rời trang.</p>
+          <button className="secondary-button" type="button" onClick={onExport} disabled={!generatedAccounts.length}><Download size={18} /> Xuất file Excel (.xlsx)</button>
+        </section>
+      </div>
+
+      {generatedAccounts.length > 0 && <section className="new-accounts">
+        <div className="table-title"><div><div className="eyebrow">Đợt vừa tạo</div><h2>Tài khoản và mật khẩu</h2></div><button className="secondary-button password-toggle" type="button" onClick={() => setShowPasswords((shown) => !shown)}>{showPasswords ? <EyeOff size={17} /> : <Eye size={17} />}{showPasswords ? "Ẩn mật khẩu" : "Hiện mật khẩu"}</button></div>
+        <div className="student-table-wrap"><table className="student-table"><thead><tr><th>STT</th><th>Tên hiển thị</th><th>Tên đăng nhập</th><th>Mật khẩu</th><th>Lớp</th></tr></thead><tbody>{generatedAccounts.map((student, index) => <tr key={student.id}><td>{index + 1}</td><td>{student.displayName}</td><td><code>{student.username}</code></td><td><code>{showPasswords ? student.password : "••••••••••"}</code></td><td>{student.className}</td></tr>)}</tbody></table></div>
+      </section>}
+
+      <section className="student-directory">
+        <div className="table-title"><div><div className="eyebrow">Danh sách đã lưu</div><h2>Toàn bộ sinh viên</h2></div><span>{students.length} tài khoản</span></div>
+        {students.length ? <div className="student-table-wrap"><table className="student-table"><thead><tr><th>Tên hiển thị</th><th>Tên đăng nhập</th><th>Lớp</th><th>Ngày tạo</th></tr></thead><tbody>{students.map((student) => <tr key={student.id}><td>{student.displayName}</td><td><code>{student.username}</code></td><td>{student.className}</td><td>{student.createdAt ? new Intl.DateTimeFormat("vi-VN").format(new Date(student.createdAt)) : "Vừa tạo"}</td></tr>)}</tbody></table></div> : <div className="empty-students"><GraduationCap size={28} /><strong>Chưa có tài khoản sinh viên</strong><span>Nhập tên lớp và số lượng ở trên để tạo đợt đầu tiên.</span></div>}
+      </section>
+    </div>
+  );
+}
+
+function HomeView({ deck, canManage, isImporting, importProgress, onPickPdf, onStart }) {
   const posCounts = useMemo(() => {
     const counts = {};
     for (const word of deck.words) counts[word.partOfSpeech] = (counts[word.partOfSpeech] || 0) + 1;
@@ -429,10 +651,10 @@ function HomeView({ deck, isImporting, importProgress, onPickPdf, onStart }) {
       <div className="mobile-deck-label">Bộ từ đang chọn</div>
       <div className="home-head">
         <div><div className="eyebrow">Sẵn sàng luyện tập</div><h1>{deck.title}</h1><p>{deck.sourceFileName || "Bộ từ vựng của bạn"}</p></div>
-        <button className="primary-button compact" type="button" onClick={onPickPdf} disabled={isImporting}>
+        {canManage && <button className="primary-button compact" type="button" onClick={onPickPdf} disabled={isImporting}>
           {isImporting ? <LoaderCircle className="spin" size={18} /> : <FileUp size={18} />}
           {isImporting ? `Đang đọc ${importProgress}%` : "Nhập PDF"}
-        </button>
+        </button>}
       </div>
 
       <div className="deck-overview">
@@ -455,9 +677,9 @@ function HomeView({ deck, isImporting, importProgress, onPickPdf, onStart }) {
           );
         })}
       </div>
-      <button className="drop-zone" type="button" onClick={onPickPdf}>
+      {canManage && <button className="drop-zone" type="button" onClick={onPickPdf}>
         <span><FileText size={21} /></span><span><b>Có bộ từ mới?</b><small>Chọn PDF có định dạng: new(adj): mới</small></span><span className="drop-action">Chọn file PDF</span>
-      </button>
+      </button>}
     </div>
   );
 }
