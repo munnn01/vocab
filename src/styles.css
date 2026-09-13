@@ -106,9 +106,10 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 
 .deck-overview { display: flex; align-items: center; justify-content: space-between; gap: 28px; margin-top: 26px; padding: 22px 24px; border: 1px solid var(--line); border-radius: 20px; background: linear-gradient(135deg, rgba(25,33,60,.94), rgba(17,23,42,.94)); box-shadow: 0 20px 65px rgba(0,0,0,.16); }
 .overview-main { display: flex; align-items: center; gap: 16px; }
-.overview-icon { display: grid; place-items: center; width: 55px; aspect-ratio: 1; border-radius: 16px; color: #0c1020; background: var(--lime); }
-.overview-main strong, .overview-main span { display: block; }
-.overview-main strong { font-size: 1.8rem; line-height: 1; }
+.overview-icon { flex: 0 0 55px; width: 55px; height: 55px; display: inline-flex; align-items: center; justify-content: center; border-radius: 16px; color: #0c1020; background: var(--lime); }
+.overview-icon svg { display: block; width: 28px; height: 28px; }
+.overview-main > div > strong, .overview-main > div > span { display: block; }
+.overview-main > div > strong { font-size: 1.8rem; line-height: 1; }
 .overview-main div span { margin-top: 6px; color: var(--muted); font-size: .75rem; }
 .pos-cloud { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
 .pos-cloud span { padding: 7px 10px; border: 1px solid var(--line); border-radius: 9px; color: var(--muted); background: rgba(255,255,255,.025); font-size: .7rem; }
@@ -349,6 +350,8 @@ kbd { margin-left: 6px; padding: 3px 6px; border: 1px solid rgba(255,255,255,.14
 .student-count { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid rgba(120,166,255,.22); border-radius: 13px; color: var(--blue); background: rgba(120,166,255,.06); }
 .student-count span { color: var(--muted); font-size: .72rem; }
 .student-count strong { margin-right: 4px; color: var(--ink); font-size: 1rem; }
+.instructor-summary { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 9px; }
+.student-count.score-count { border-color: rgba(199,255,85,.22); color: var(--lime); background: rgba(199,255,85,.055); }
 .demo-banner { display: flex; align-items: center; gap: 9px; margin-top: 20px; padding: 12px 14px; border: 1px solid rgba(241,195,95,.25); border-radius: 12px; color: #f5d994; background: rgba(241,195,95,.07); font-size: .75rem; }
 .teacher-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(280px, .75fr); gap: 15px; margin-top: 24px; }
 .account-generator, .export-panel, .new-accounts, .student-directory { border: 1px solid var(--line); border-radius: 20px; background: linear-gradient(145deg, rgba(26,34,60,.96), rgba(17,23,42,.96)); }
@@ -369,6 +372,7 @@ kbd { margin-left: 6px; padding: 3px 6px; border: 1px solid rgba(255,255,255,.14
 .new-accounts { border-color: rgba(199,255,85,.2); }
 .table-title { display: flex; align-items: center; justify-content: space-between; gap: 15px; margin-bottom: 15px; }
 .table-title h2 { margin-top: 5px; }
+.table-title p { margin: 6px 0 0; color: var(--muted); font-size: .68rem; line-height: 1.5; }
 .table-title > span { color: var(--muted); font-size: .7rem; }
 .password-toggle { min-height: 38px; padding-inline: 12px; font-size: .72rem; }
 .student-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 13px; }
@@ -377,6 +381,12 @@ kbd { margin-left: 6px; padding: 3px 6px; border: 1px solid rgba(255,255,255,.14
 .student-table td { height: 46px; padding: 0 12px; border-top: 1px solid var(--line); color: #cad1e3; font-size: .76rem; }
 .student-table tbody tr:hover { background: rgba(255,255,255,.025); }
 .student-table code { color: var(--lime); font-family: "Cascadia Code", monospace; font-size: .72rem; }
+.result-table { min-width: 860px; }
+.result-table td strong, .result-table td small { display: block; }
+.result-table td small { max-width: 220px; margin-top: 4px; overflow: hidden; color: var(--muted); font-size: .64rem; text-overflow: ellipsis; white-space: nowrap; }
+.score-badge, .no-result { display: inline-flex; align-items: center; min-height: 29px; padding: 0 9px; border-radius: 8px; font-size: .7rem; font-weight: 800; white-space: nowrap; }
+.score-badge { color: #11172a; background: var(--lime); }
+.no-result { color: var(--muted); background: rgba(255,255,255,.055); }
 .empty-students { display: flex; min-height: 155px; flex-direction: column; align-items: center; justify-content: center; color: var(--muted); text-align: center; }
 .empty-students svg { margin-bottom: 12px; color: var(--blue); }
 .empty-students strong { color: var(--ink); font-size: .86rem; }
@@ -402,6 +412,7 @@ kbd { margin-left: 6px; padding: 3px 6px; border: 1px solid rgba(255,255,255,.14
   .login-card { margin-top: 5vh; padding: 24px 18px; border-radius: 20px; }
   .topbar-actions { gap: 8px; }
   .instructor-head { align-items: flex-start; flex-direction: column; }
+  .instructor-summary { width: 100%; justify-content: flex-start; }
   .student-count { width: 100%; }
   .teacher-grid { margin-top: 18px; }
   .generator-fields { grid-template-columns: 1fr; }

@@ -100,6 +100,31 @@ export async function loadStudents() {
   }));
 }
 
+export async function loadStudentResults() {
+  const user = await requireUser();
+  const { data, error } = await supabase
+    .from("study_sessions")
+    .select("id,owner_id,deck_id,mode,score,correct_count,total_count,completed,created_at,decks(title)")
+    .neq("owner_id", user.id)
+    .eq("completed", true)
+    .order("created_at", { ascending: false })
+    .limit(500);
+
+  if (error) throw error;
+
+  return (data || []).map((session) => ({
+    id: session.id,
+    studentId: session.owner_id,
+    deckId: session.deck_id,
+    deckTitle: Array.isArray(session.decks) ? session.decks[0]?.title : session.decks?.title,
+    mode: session.mode,
+    score: session.score,
+    correct: session.correct_count,
+    total: session.total_count,
+    completedAt: session.created_at,
+  }));
+}
+
 export async function createStudentAccounts({ className, prefix, count }) {
   const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
   if (sessionError || !sessionData.session) throw new Error("Phiên đăng nhập đã hết hạn.");
