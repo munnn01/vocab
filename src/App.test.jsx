@@ -17,7 +17,7 @@ globalThis.document = {
   removeEventListener() {},
 };
 
-import { App, isDeckUnlockedForClass, isDeckLockedForStudent } from "./App";
+import { App, isDeckUnlockedForClass, isDeckLockedForStudent, getDeckLockAtForStudent } from "./App";
 
 test("App renders without crashing", () => {
   const html = renderToString(<App />);
@@ -78,4 +78,36 @@ test("isDeckLockedForStudent handles lockAt deadlines", () => {
   expect(isDeckLockedForStudent(expiredDeck, student)).toBe(true);
   expect(isDeckLockedForStudent(expiredDeck, instructor)).toBe(false);
 });
+
+test("isDeckLockedForStudent and getDeckLockAtForStudent handle per-class deadlines (lockAtByClass)", () => {
+  const futureDate = new Date(Date.now() + 1000 * 60 * 60 * 24).toISOString();
+  const pastDate = new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString();
+
+  const studentA = { role: "student", className: "12A1" };
+  const studentB = { role: "student", className: "12A2" };
+  const studentC = { role: "student", className: "12A3" };
+
+  const perClassDeck = {
+    title: "Class Specific Deck",
+    unlockedClasses: null,
+    lockAt: null,
+    lockAtByClass: {
+      "12A1": pastDate,   // 12A1 has expired
+      "12A2": futureDate, // 12A2 is still open
+    },
+  };
+
+  // Student A (12A1) should be locked due to past deadline
+  expect(getDeckLockAtForStudent(perClassDeck, studentA)).toBe(pastDate);
+  expect(isDeckLockedForStudent(perClassDeck, studentA)).toBe(true);
+
+  // Student B (12A2) should be open due to future deadline
+  expect(getDeckLockAtForStudent(perClassDeck, studentB)).toBe(futureDate);
+  expect(isDeckLockedForStudent(perClassDeck, studentB)).toBe(false);
+
+  // Student C (12A3) has no specific deadline and no all deadline, should be open
+  expect(getDeckLockAtForStudent(perClassDeck, studentC)).toBe(null);
+  expect(isDeckLockedForStudent(perClassDeck, studentC)).toBe(false);
+});
+
 

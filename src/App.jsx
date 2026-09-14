@@ -65,11 +65,21 @@ export function formatLockDateTime(isoString) {
   return `${hours}:${minutes} ${day}/${month}/${year}`;
 }
 
+export function getDeckLockAtForStudent(deck, account) {
+  if (!deck) return null;
+  const className = account?.className?.trim();
+  if (deck.lockAtByClass && typeof deck.lockAtByClass === "object" && className && deck.lockAtByClass[className] !== undefined) {
+    return deck.lockAtByClass[className];
+  }
+  return deck.lockAtByClass?.all || deck.lockAt || null;
+}
+
 export function isDeckLockedForStudent(deck, account) {
   if (!deck || account?.role !== "student") return false;
   if (!isDeckUnlockedForClass(deck, account.className)) return true;
-  if (deck.lockAt) {
-    const lockTime = new Date(deck.lockAt).getTime();
+  const lockAt = getDeckLockAtForStudent(deck, account);
+  if (lockAt) {
+    const lockTime = new Date(lockAt).getTime();
     if (!isNaN(lockTime) && Date.now() > lockTime) {
       return true;
     }
@@ -305,8 +315,9 @@ export function App() {
       return;
     }
     if (isDeckLockedForStudent(selectedDeck, account)) {
-      if (selectedDeck.lockAt && Date.now() > new Date(selectedDeck.lockAt).getTime()) {
-        showToast("Bộ từ này đã hết hạn làm bài.");
+      const studentLockAt = getDeckLockAtForStudent(selectedDeck, account);
+      if (studentLockAt && Date.now() > new Date(studentLockAt).getTime()) {
+        showToast("Bộ từ này đã hết hạn làm bài đối với lớp của bạn.");
       } else {
         showToast(`Bộ từ này đang khóa đối với lớp ${account.className || "của bạn"}.`);
       }
@@ -700,27 +711,40 @@ export function App() {
     }
   }
 
-  async function handleDeckLockAt(newLockAt) {
+  async function handleDeckLockAt(newLockAtOrMap) {
     if (!selectedDeck) return;
-    const previous = selectedDeck.lockAt;
+    const previousLockAt = selectedDeck.lockAt;
+    const previousLockAtByClass = selectedDeck.lockAtByClass;
+
+    let newLockAt = null;
+    let newLockAtByClass = null;
+
+    if (typeof newLockAtOrMap === "string" || newLockAtOrMap === null) {
+      newLockAt = newLockAtOrMap;
+      newLockAtByClass = newLockAtOrMap ? { all: newLockAtOrMap } : null;
+    } else if (typeof newLockAtOrMap === "object") {
+      newLockAtByClass = newLockAtOrMap;
+      newLockAt = newLockAtByClass?.all || Object.values(newLockAtByClass || {})[0] || null;
+    }
+
     setDecks((current) =>
       current.map((deck) =>
-        deck.id === selectedDeck.id ? { ...deck, lockAt: newLockAt } : deck
+        deck.id === selectedDeck.id ? { ...deck, lockAt: newLockAt, lockAtByClass: newLockAtByClass } : deck
       )
     );
     if (selectedDeck.isDemo || selectedDeck.isTemporary) {
-      showToast(newLockAt ? `Đã đặt thời hạn khóa bài: ${formatLockDateTime(newLockAt)}.` : "Đã gỡ thời hạn khóa bài (mở tự do).");
+      showToast("Đã lưu cài đặt thời hạn khóa bài.");
       return;
     }
     setIsUpdatingLockAt(true);
     try {
-      await updateDeckLockAt(selectedDeck.id, newLockAt);
-      showToast(newLockAt ? `Đã đặt thời hạn khóa bài: ${formatLockDateTime(newLockAt)}.` : "Đã gỡ thời hạn khóa bài (mở tự do).");
+      await updateDeckLockAt(selectedDeck.id, newLockAtByClass || newLockAt);
+      showToast("Đã lưu cài đặt thời hạn khóa bài thành công.");
     } catch (error) {
       console.error("Không thể cập nhật thời hạn khóa bài", error);
       setDecks((current) =>
         current.map((deck) =>
-          deck.id === selectedDeck.id ? { ...deck, lockAt: previous } : deck
+          deck.id === selectedDeck.id ? { ...deck, lockAt: previousLockAt, lockAtByClass: previousLockAtByClass } : deck
         )
       );
       showToast("Chưa cập nhật được thời hạn khóa bài.");
@@ -1033,7 +1057,27 @@ export function App() {
                     }}
                   >
                     <span className={`deck-icon ${isDeckLockedForStudent(deck, account) ? "locked" : (index % 2 ? "blue" : "coral")}`}>{isDeckLockedForStudent(deck, account) ? <Lock size={16} /> : deck.isDemo ? <Sparkles size={18} /> : <BookOpen size={18} />}</span>
-                    <span><b>{deck.title}</b><small>{isDeckLockedForStudent(deck, account) ? (deck.lockAt && Date.now() > new Date(deck.lockAt).getTime() ? "🔒 Đã hết hạn làm bài" : "🔒 Đã khóa cho lớp bạn") : (deck.lockAt ? `⏳ Hạn: ${formatLockDateTime(deck.lockAt)}` : deckMeta(deck))}</small></span>
+                    <span>
+                      <b>{deck.title}</b>
+                      <small>
+                        {(() => {
+                          if (isDeckLockedForStudent(deck, account)) {
+                            const studentDeadline = getDeckLockAtForStudent(deck, account);
+                            return studentDeadline && Date.now() > new Date(studentDeadline).getTime()
+                              ? "🔒 Đã hết hạn làm bài"
+                              : "🔒 Đã khóa cho lớp bạn";
+                          }
+                          if (canManage) {
+                            const lockCount = Object.keys(deck.lockAtByClass || {}).length;
+                            if (lockCount > 1) return `⏳ Hạn: ${lockCount} lớp`;
+                            if (deck.lockAt) return `⏳ Hạn: ${formatLockDateTime(deck.lockAt)}`;
+                            return deckMeta(deck);
+                          }
+                          const studentDeadline = getDeckLockAtForStudent(deck, account);
+                          return studentDeadline ? `⏳ Hạn: ${formatLockDateTime(studentDeadline)}` : deckMeta(deck);
+                        })()}
+                      </small>
+                    </span>
                   </button>
                   {canManage && !deck.isDemo && (
                     <button
@@ -2103,11 +2147,45 @@ break down(phrase): bị hỏng, suy sụp`}
   );
 }
 
-function DeckLockSettings({ lockAt, onChangeLockAt, disabled }) {
+function DeckLockSettings({
+  lockAt,
+  lockAtByClass,
+  availableClasses = [],
+  unlockedClasses = null,
+  onChangeLockAt,
+  disabled,
+}) {
+  const lockMap = useMemo(() => {
+    if (lockAtByClass && typeof lockAtByClass === "object") {
+      return { ...lockAtByClass };
+    }
+    if (lockAt) {
+      return { all: lockAt };
+    }
+    return {};
+  }, [lockAt, lockAtByClass]);
+
+  const allClassOptions = useMemo(() => {
+    const set = new Set(availableClasses);
+    if (Array.isArray(unlockedClasses)) {
+      for (const c of unlockedClasses) {
+        if (c && c !== "*") set.add(c);
+      }
+    }
+    for (const k of Object.keys(lockMap)) {
+      if (k !== "all" && k) set.add(k);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "vi", { sensitivity: "base" }));
+  }, [availableClasses, unlockedClasses, lockMap]);
+
+  const [selectedClass, setSelectedClass] = useState("all");
+
+  const currentClassLockAt = selectedClass === "all" ? (lockMap.all || null) : (lockMap[selectedClass] || null);
+
   const [inputValue, setInputValue] = useState(() => {
-    if (!lockAt) return "";
+    if (!currentClassLockAt) return "";
     try {
-      const d = new Date(lockAt);
+      const d = new Date(currentClassLockAt);
       if (isNaN(d.getTime())) return "";
       const pad = (n) => String(n).padStart(2, "0");
       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
@@ -2117,12 +2195,13 @@ function DeckLockSettings({ lockAt, onChangeLockAt, disabled }) {
   });
 
   useEffect(() => {
-    if (!lockAt) {
+    const val = selectedClass === "all" ? (lockMap.all || null) : (lockMap[selectedClass] || null);
+    if (!val) {
       setInputValue("");
       return;
     }
     try {
-      const d = new Date(lockAt);
+      const d = new Date(val);
       if (isNaN(d.getTime())) {
         setInputValue("");
         return;
@@ -2132,25 +2211,33 @@ function DeckLockSettings({ lockAt, onChangeLockAt, disabled }) {
     } catch {
       setInputValue("");
     }
-  }, [lockAt]);
+  }, [selectedClass, lockMap]);
 
-  const isLocked = Boolean(lockAt && Date.now() > new Date(lockAt).getTime());
-  const hasLock = Boolean(lockAt);
+  const isLocked = Boolean(currentClassLockAt && Date.now() > new Date(currentClassLockAt).getTime());
+  const hasLock = Boolean(currentClassLockAt);
 
   function handleApply() {
+    const nextMap = { ...lockMap };
     if (!inputValue) {
-      onChangeLockAt(null);
+      if (selectedClass === "all") delete nextMap.all;
+      else delete nextMap[selectedClass];
+      onChangeLockAt(Object.keys(nextMap).length > 0 ? nextMap : null);
       return;
     }
     const d = new Date(inputValue);
     if (!isNaN(d.getTime())) {
-      onChangeLockAt(d.toISOString());
+      if (selectedClass === "all") nextMap.all = d.toISOString();
+      else nextMap[selectedClass] = d.toISOString();
+      onChangeLockAt(nextMap);
     }
   }
 
   function handleClear() {
     setInputValue("");
-    onChangeLockAt(null);
+    const nextMap = { ...lockMap };
+    if (selectedClass === "all") delete nextMap.all;
+    else delete nextMap[selectedClass];
+    onChangeLockAt(Object.keys(nextMap).length > 0 ? nextMap : null);
   }
 
   function handlePreset(type) {
@@ -2171,7 +2258,10 @@ function DeckLockSettings({ lockAt, onChangeLockAt, disabled }) {
     const pad = (n) => String(n).padStart(2, "0");
     const formatted = `${target.getFullYear()}-${pad(target.getMonth() + 1)}-${pad(target.getDate())}T${pad(target.getHours())}:${pad(target.getMinutes())}`;
     setInputValue(formatted);
-    onChangeLockAt(target.toISOString());
+    const nextMap = { ...lockMap };
+    if (selectedClass === "all") nextMap.all = target.toISOString();
+    else nextMap[selectedClass] = target.toISOString();
+    onChangeLockAt(nextMap);
   }
 
   return (
@@ -2180,50 +2270,84 @@ function DeckLockSettings({ lockAt, onChangeLockAt, disabled }) {
         <span className={`lock-badge-pill ${!hasLock ? "open" : isLocked ? "expired" : "active"}`}>
           {isLocked ? <Lock size={15} /> : <Clock size={15} />}
           <span>
+            {selectedClass === "all" ? "Tất cả các lớp: " : `Lớp ${selectedClass}: `}
             {!hasLock
-              ? "Trạng thái: Không giới hạn thời gian (luôn mở)"
+              ? selectedClass !== "all" && lockMap.all
+                ? `Không đặt riêng (dùng hạn chung: ${formatLockDateTime(lockMap.all)})`
+                : "Không giới hạn thời gian (luôn mở)"
               : isLocked
-              ? `Trạng thái: Đã hết hạn khóa bài (${formatLockDateTime(lockAt)})`
-              : `Trạng thái: Đang mở - Sẽ khóa lúc: ${formatLockDateTime(lockAt)}`}
+              ? `Đã hết hạn khóa bài (${formatLockDateTime(currentClassLockAt)})`
+              : `Đang mở - Sẽ khóa lúc: ${formatLockDateTime(currentClassLockAt)}`}
           </span>
         </span>
       </div>
 
       <div className="lock-input-group">
-        <label htmlFor="deck-lock-datetime">Chọn ngày & giờ tự động khóa bài:</label>
+        <label htmlFor="deck-lock-datetime">
+          Chọn ngày & giờ tự động khóa bài cho {selectedClass === "all" ? "tất cả các lớp" : `lớp ${selectedClass}`}:
+        </label>
         <div className="lock-input-row">
-          <input
-            id="deck-lock-datetime"
-            type="datetime-local"
-            className="datetime-picker-input"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            disabled={disabled}
-          />
-          <button
-            type="button"
-            className="primary-button compact"
-            onClick={handleApply}
-            disabled={disabled || (!inputValue && !lockAt)}
-          >
-            <Check size={16} /> Lưu giờ khóa
-          </button>
-          {hasLock && (
+          <div className="lock-datetime-controls">
+            <input
+              id="deck-lock-datetime"
+              type="datetime-local"
+              className="datetime-picker-input"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              disabled={disabled}
+            />
             <button
               type="button"
-              className="secondary-button compact"
-              onClick={handleClear}
-              disabled={disabled}
-              title="Xóa hẹn giờ, mở bài không giới hạn"
+              className="primary-button compact"
+              onClick={handleApply}
+              disabled={disabled || (!inputValue && !currentClassLockAt)}
             >
-              Mở vĩnh viễn
+              <Check size={16} /> Lưu giờ khóa
             </button>
-          )}
+            {hasLock && (
+              <button
+                type="button"
+                className="secondary-button compact"
+                onClick={handleClear}
+                disabled={disabled}
+                title={selectedClass === "all" ? "Xóa hạn chung cho tất cả lớp" : `Xóa hạn riêng cho lớp ${selectedClass}`}
+              >
+                Mở vĩnh viễn
+              </button>
+            )}
+          </div>
+
+          {/* Ô Lớp ở khoảng trống bên phải theo đúng yêu cầu */}
+          <div className="lock-class-field">
+            <label htmlFor="deck-lock-class-select" className="lock-class-label">
+              <Users size={16} />
+              <span>Lớp:</span>
+            </label>
+            <select
+              id="deck-lock-class-select"
+              className="lock-class-select"
+              value={selectedClass}
+              onChange={(e) => setSelectedClass(e.target.value)}
+              disabled={disabled}
+            >
+              <option value="all">Tất cả các lớp (Chung)</option>
+              {allClassOptions.map((cls) => {
+                const hasCustom = Boolean(lockMap[cls]);
+                return (
+                  <option key={cls} value={cls}>
+                    Lớp {cls} {hasCustom ? "⏳ (Đã hẹn)" : ""}
+                  </option>
+                );
+              })}
+            </select>
+          </div>
         </div>
       </div>
 
       <div className="lock-presets-row">
-        <span className="preset-label">Hẹn giờ nhanh:</span>
+        <span className="preset-label">
+          Hẹn giờ nhanh cho {selectedClass === "all" ? "Tất cả các lớp" : `Lớp ${selectedClass}`}:
+        </span>
         <button
           type="button"
           className="preset-btn"
@@ -2257,6 +2381,40 @@ function DeckLockSettings({ lockAt, onChangeLockAt, disabled }) {
           +1 tuần
         </button>
       </div>
+
+      {Object.keys(lockMap).length > 0 && (
+        <div className="lock-classes-summary-row">
+          <span className="summary-label">Danh sách hẹn giờ theo lớp:</span>
+          <div className="summary-chips">
+            {lockMap.all && (
+              <button
+                type="button"
+                className={`summary-chip ${selectedClass === "all" ? "active" : ""}`}
+                onClick={() => setSelectedClass("all")}
+                title="Bấm để chỉnh sửa hạn chung"
+              >
+                <span>Tất cả:</span>
+                <b>{formatLockDateTime(lockMap.all)}</b>
+              </button>
+            )}
+            {allClassOptions.map((cls) => {
+              if (!lockMap[cls]) return null;
+              return (
+                <button
+                  key={cls}
+                  type="button"
+                  className={`summary-chip ${selectedClass === cls ? "active" : ""}`}
+                  onClick={() => setSelectedClass(cls)}
+                  title={`Bấm để chỉnh sửa hạn lớp ${cls}`}
+                >
+                  <span>Lớp {cls}:</span>
+                  <b>{formatLockDateTime(lockMap[cls])}</b>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2288,7 +2446,8 @@ function HomeView({
   const assignedMode = PRACTICE_MODES.find((mode) => mode.id === deck.practiceMode) || PRACTICE_MODES[0];
   const AssignedIcon = assignedMode.icon;
   const isLockedForMe = isDeckLockedForStudent(deck, account);
-  const isExpired = Boolean(deck.lockAt && Date.now() > new Date(deck.lockAt).getTime());
+  const studentDeadline = getDeckLockAtForStudent(deck, account);
+  const isExpired = Boolean(studentDeadline && Date.now() > new Date(studentDeadline).getTime());
 
   return (
     <div className="home-view">
@@ -2360,6 +2519,9 @@ function HomeView({
                 </div>
                 <DeckLockSettings
                   lockAt={deck.lockAt}
+                  lockAtByClass={deck.lockAtByClass}
+                  availableClasses={availableClasses}
+                  unlockedClasses={deck.unlockedClasses}
                   onChangeLockAt={onLockAtChange}
                   disabled={isUpdatingLockAt}
                 />
@@ -2393,22 +2555,24 @@ function HomeView({
             <div className="eyebrow">{isExpired ? "Bài tập đã hết hạn" : "Bộ từ đang tạm khóa"}</div>
             <h2>
               {isExpired
-                ? `Thời hạn làm bài đã kết thúc (${formatLockDateTime(deck.lockAt)})`
+                ? `Thời hạn làm bài đã kết thúc (${formatLockDateTime(studentDeadline)})`
                 : `Bài tập chưa mở cho lớp ${account?.className || "của bạn"}`}
             </h2>
             <p>
               {isExpired
-                ? "Giảng viên đã cài đặt thời hạn cho bài tập này và hiện tại bài đã bị khóa. Vui lòng liên hệ giảng viên nếu bạn cần gia hạn làm bù."
+                ? "Giảng viên đã cài đặt thời hạn cho bài tập này đối với lớp của bạn và hiện tại bài đã bị khóa. Vui lòng liên hệ giảng viên nếu bạn cần gia hạn làm bù."
                 : "Giảng viên đang khóa bộ từ này đối với lớp của bạn. Hãy liên hệ với giảng viên để được mở quyền vào làm bài."}
             </p>
           </div>
         </div>
       ) : (
         <>
-          {deck.lockAt && (
+          {studentDeadline && (
             <div className="deadline-notice-banner">
               <Clock size={16} />
-              <span>Hạn chót nộp bài: <b>{formatLockDateTime(deck.lockAt)}</b>. Vui lòng hoàn thành trước thời gian này.</span>
+              <span>
+                Hạn chót nộp bài {account?.className ? `(Lớp ${account.className})` : ""}: <b>{formatLockDateTime(studentDeadline)}</b>. Vui lòng hoàn thành trước thời gian này.
+              </span>
             </div>
           )}
           <div className="section-title-row">

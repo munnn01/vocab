@@ -292,6 +292,16 @@ export async function loadLibrary() {
       practiceMode: deck.practice_mode || "typing",
       unlockedClasses: Array.isArray(deck.unlocked_classes) ? deck.unlocked_classes : null,
       lockAt: deck.lock_at || (typeof localStorage !== "undefined" ? localStorage.getItem(`vocab_deck_lock_${deck.id}`) : null) || null,
+      lockAtByClass: (() => {
+        if (typeof localStorage !== "undefined") {
+          const raw = localStorage.getItem(`vocab_deck_lock_by_class_${deck.id}`);
+          if (raw) {
+            try { return JSON.parse(raw); } catch { /* ignore */ }
+          }
+        }
+        if (deck.lock_at) return { all: deck.lock_at };
+        return null;
+      })(),
       createdAt: deck.created_at,
       words: [...(deck.words || [])]
         .sort((a, b) => a.position - b.position)
@@ -388,15 +398,34 @@ export async function updateDeckClassAccess(deckId, unlockedClasses) {
   }
 }
 
-export async function updateDeckLockAt(deckId, lockAt) {
+export async function updateDeckLockAt(deckId, lockAtOrByClass) {
+  let lockAtByClass = null;
+  let legacyLockAt = null;
+
+  if (typeof lockAtOrByClass === "string" || lockAtOrByClass === null) {
+    legacyLockAt = lockAtOrByClass;
+    lockAtByClass = lockAtOrByClass ? { all: lockAtOrByClass } : null;
+  } else if (typeof lockAtOrByClass === "object") {
+    lockAtByClass = lockAtOrByClass;
+    legacyLockAt = lockAtByClass?.all || Object.values(lockAtByClass || {})[0] || null;
+  }
+
   if (typeof localStorage !== "undefined") {
-    if (lockAt) localStorage.setItem(`vocab_deck_lock_${deckId}`, lockAt);
-    else localStorage.removeItem(`vocab_deck_lock_${deckId}`);
+    if (lockAtByClass && Object.keys(lockAtByClass).length > 0) {
+      localStorage.setItem(`vocab_deck_lock_by_class_${deckId}`, JSON.stringify(lockAtByClass));
+    } else {
+      localStorage.removeItem(`vocab_deck_lock_by_class_${deckId}`);
+    }
+    if (legacyLockAt) {
+      localStorage.setItem(`vocab_deck_lock_${deckId}`, legacyLockAt);
+    } else {
+      localStorage.removeItem(`vocab_deck_lock_${deckId}`);
+    }
   }
   if (!supabase) return;
   try {
     await requireUser();
-    const value = lockAt ? new Date(lockAt).toISOString() : null;
+    const value = legacyLockAt ? new Date(legacyLockAt).toISOString() : null;
     await supabase
       .from("decks")
       .update({ lock_at: value })
