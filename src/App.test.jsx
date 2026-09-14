@@ -217,5 +217,136 @@ test("getDeckStudentAttempts and isDeckAttemptsExhausted correctly manage practi
   expect(isDeckAttemptsExhausted(deck1, student, [])).toBe(false); // 0 session < 2 maxAttempts
 });
 
+import {
+  FlashcardView,
+  LeaderboardModal,
+  StudentProgressModal,
+  EditDeckModal,
+  DeckExamModeSettings,
+  DeckTimeLimitSettings,
+} from "./components/StudyFeatures";
+import { speakWord } from "./lib/vocabulary";
+
+test("speakWord handles text-to-speech gracefully", () => {
+  // window.speechSynthesis may or may not exist in node env
+  expect(() => speakWord("hello")).not.toThrow();
+});
+
+test("FlashcardView renders flashcard cards and controls", () => {
+  const deck = {
+    id: "deck-flash",
+    title: "Unit 1: Environment",
+    words: [
+      { id: "w1", term: "biodiversity", partOfSpeech: "n", meaning: "đa dạng sinh học" },
+      { id: "w2", term: "sustainable", partOfSpeech: "adj", meaning: "bền vững" },
+    ],
+  };
+
+  const html = renderToString(<FlashcardView deck={deck} onBack={() => {}} onStartQuiz={() => {}} />);
+  expect(html).toContain("Unit 1: Environment");
+  expect(html).toContain("biodiversity");
+  expect(html).toContain("đa dạng sinh học");
+  expect(html).toContain("Lật xem nghĩa");
+  expect(html).toContain("Trộn thẻ");
+});
+
+test("LeaderboardModal renders ranked students and medals", () => {
+  const decks = [{ id: "deck-1", title: "Unit 1" }];
+  const students = [
+    { id: "st-1", displayName: "Nguyễn Văn A", className: "12A1" },
+    { id: "st-2", displayName: "Trần Thị B", className: "12A1" },
+  ];
+  const results = [
+    { id: "r1", studentId: "st-1", deckId: "deck-1", score: 95, completed: true },
+    { id: "r2", studentId: "st-2", deckId: "deck-1", score: 85, completed: true },
+  ];
+
+  const html = renderToString(
+    <LeaderboardModal
+      isOpen={true}
+      onClose={() => {}}
+      decks={decks}
+      students={students}
+      studentResults={results}
+      currentAccount={{ id: "st-1", role: "student" }}
+    />
+  );
+
+  expect(html).toContain("Bảng xếp hạng thành tích");
+  expect(html).toContain("Nguyễn Văn A");
+  expect(html).toContain("95");
+  expect(html).toContain("Trần Thị B");
+  expect(html).toContain("85");
+  expect(html).toContain("Bạn"); // st-1 is current account
+});
+
+test("StudentProgressModal renders summary stats and test history", () => {
+  const student = { id: "st-1", displayName: "Nguyễn Văn A", className: "12A1" };
+  const results = [
+    { id: "r1", studentId: "st-1", deckTitle: "Unit 1", score: 90, completed: true, correct: 9, total: 10 },
+    { id: "r2", studentId: "st-1", deckTitle: "Unit 2", score: 80, completed: true, correct: 8, total: 10 },
+  ];
+
+  const html = renderToString(
+    <StudentProgressModal
+      isOpen={true}
+      onClose={() => {}}
+      student={student}
+      studentResults={results}
+    />
+  );
+
+  expect(html).toContain("Hồ sơ tiến trình học sinh");
+  expect(html).toContain("Nguyễn Văn A");
+  expect(html).toContain("12A1");
+  expect(html).toContain("85"); // Average of 90 and 80
+  expect(html).toContain("90"); // Best score
+  expect(html).toContain("Tổng lượt làm bài");
+  expect(html).toContain("Biểu đồ điểm số");
+});
+
+test("EditDeckModal renders editable inputs for title and vocabulary words", () => {
+  const deck = {
+    id: "deck-edit",
+    title: "Tiếng Anh 12",
+    words: [
+      { id: "w1", term: "pollute", partOfSpeech: "v", meaning: "gây ô nhiễm" },
+    ],
+  };
+
+  const html = renderToString(
+    <EditDeckModal
+      isOpen={true}
+      onClose={() => {}}
+      deck={deck}
+      onSave={() => {}}
+      isSaving={false}
+    />
+  );
+
+  expect(html).toContain("Chỉnh sửa bộ từ vựng");
+  expect(html).toContain("Tiếng Anh 12");
+  expect(html).toContain("pollute");
+  expect(html).toContain("gây ô nhiễm");
+  expect(html).toContain("Thêm từ mới");
+});
+
+test("DeckExamModeSettings and DeckTimeLimitSettings render mode options", () => {
+  const examHtml = renderToString(
+    <DeckExamModeSettings isExamMode={true} onChange={() => {}} disabled={false} />
+  );
+  expect(examHtml).toContain("Quy chế làm bài");
+  expect(examHtml).toContain("Kiểm tra nghiêm ngặt");
+  expect(examHtml).toContain("Luyện tập tự do");
+
+  const timerHtml = renderToString(
+    <DeckTimeLimitSettings timeLimitMinutes={10} onChange={() => {}} disabled={false} />
+  );
+  expect(timerHtml).toContain("Thời gian làm bài");
+  expect(timerHtml).toContain("10 phút");
+  expect(timerHtml).toContain("Không giới hạn");
+});
+
+
 
 

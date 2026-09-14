@@ -304,6 +304,20 @@ export async function loadLibrary() {
         }
         return null;
       })(),
+      timeLimitMinutes: deck.time_limit_minutes ?? (() => {
+        if (typeof localStorage !== "undefined") {
+          const raw = localStorage.getItem(`vocab_deck_time_limit_${deck.id}`);
+          if (raw) return Number(raw);
+        }
+        return null;
+      })(),
+      isExamMode: deck.is_exam_mode ?? (() => {
+        if (typeof localStorage !== "undefined") {
+          const raw = localStorage.getItem(`vocab_deck_exam_mode_${deck.id}`);
+          if (raw !== null) return raw === "true";
+        }
+        return true;
+      })(),
       lockAt: deck.lock_at || (typeof localStorage !== "undefined" ? localStorage.getItem(`vocab_deck_lock_${deck.id}`) : null) || null,
       lockAtByClass: (() => {
         if (typeof localStorage !== "undefined") {
@@ -451,6 +465,87 @@ export async function updateDeckMaxAttempts(deckId, maxAttempts) {
   } catch (err) {
     console.warn("Could not sync max_attempts with Supabase:", err);
   }
+}
+
+export async function updateDeckTimeLimit(deckId, minutes) {
+  const value = minutes && Number(minutes) > 0 ? Number(minutes) : null;
+  if (typeof localStorage !== "undefined") {
+    if (value) {
+      localStorage.setItem(`vocab_deck_time_limit_${deckId}`, String(value));
+    } else {
+      localStorage.removeItem(`vocab_deck_time_limit_${deckId}`);
+    }
+  }
+  if (!supabase) return;
+  try {
+    await requireUser();
+    const { error } = await supabase
+      .from("decks")
+      .update({ time_limit_minutes: value })
+      .eq("id", deckId);
+    if (error && error.message?.includes("time_limit_minutes")) {
+      console.warn("Column time_limit_minutes not yet in decks table. Saved to localStorage.");
+      return;
+    }
+    if (error) throw error;
+  } catch (err) {
+    console.warn("Could not sync time_limit_minutes with Supabase:", err);
+  }
+}
+
+export async function updateDeckExamMode(deckId, isExamMode) {
+  const value = Boolean(isExamMode);
+  if (typeof localStorage !== "undefined") {
+    localStorage.setItem(`vocab_deck_exam_mode_${deckId}`, String(value));
+  }
+  if (!supabase) return;
+  try {
+    await requireUser();
+    const { error } = await supabase
+      .from("decks")
+      .update({ is_exam_mode: value })
+      .eq("id", deckId);
+    if (error && error.message?.includes("is_exam_mode")) {
+      console.warn("Column is_exam_mode not yet in decks table. Saved to localStorage.");
+      return;
+    }
+    if (error) throw error;
+  } catch (err) {
+    console.warn("Could not sync is_exam_mode with Supabase:", err);
+  }
+}
+
+export async function updateDeckWords(deckId, title, words) {
+  if (deckId === "demo" || !supabase) return;
+  const user = await requireUser();
+
+  // 1. Update deck title & word count
+  const { error: deckErr } = await supabase
+    .from("decks")
+    .update({ title, word_count: words.length })
+    .eq("id", deckId);
+  if (deckErr) throw deckErr;
+
+  // 2. Delete existing words and re-insert updated list
+  const { error: delErr } = await supabase
+    .from("words")
+    .delete()
+    .eq("deck_id", deckId);
+  if (delErr) throw delErr;
+
+  const wordPayload = words.map((word, index) => ({
+    deck_id: deckId,
+    owner_id: user.id,
+    term: word.term.trim(),
+    part_of_speech: word.partOfSpeech || "other",
+    meaning: word.meaning.trim(),
+    position: index,
+  }));
+
+  const { error: insErr } = await supabase
+    .from("words")
+    .insert(wordPayload);
+  if (insErr) throw insErr;
 }
 
 export async function updateDeckLockAt(deckId, lockAtOrByClass) {

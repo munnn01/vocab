@@ -4,13 +4,15 @@ import {
   Download, Eye, EyeOff, FileSpreadsheet, FileUp, Flame, GraduationCap, Keyboard, KeyRound, Layers3,
   LoaderCircle, Lock, LogOut, Maximize2, Minimize2, Plus,
   RotateCcw, ShieldCheck, Sparkles, Trash2, Trophy, Unlock, UserPlus, Users, X,
+  Volume2, Shuffle, Pencil, BarChart3, Medal, Timer, AlertTriangle, BookMarked,
 } from "lucide-react";
-import { DEMO_WORDS, POS_LABELS, makeQuizChoices, normalizeAnswer, shuffle } from "./lib/vocabulary";
+import { DEMO_WORDS, POS_LABELS, makeQuizChoices, normalizeAnswer, shuffle, speakWord } from "./lib/vocabulary";
 import {
   createDeck, createStudentAccounts, deleteDeck, deleteRoster, deleteOrphanedRosters, getCurrentAccount, isSupabaseConfigured,
   loadLibrary, loadRosterWorkbook, loadRosters, loadStudentResults, loadStudents,
   resetStudentPasswords, saveStudySession, signIn, signOut,
   updateDeckPracticeMode, updateDeckClassAccess, updateDeckLockAt, updateDeckMaxAttempts,
+  updateDeckExamMode, updateDeckTimeLimit, updateDeckWords,
 } from "./lib/supabase";
 import {
   createDemoStudentAccounts, downloadRosterCredentialsXlsx, downloadRosterResultsXlsx,
@@ -18,6 +20,14 @@ import {
 } from "./lib/studentAccounts";
 import { BookBackground } from "./components/BookBackground";
 import { LoginCat } from "./components/LoginCat";
+import {
+  FlashcardView,
+  LeaderboardModal,
+  StudentProgressModal,
+  EditDeckModal,
+  DeckExamModeSettings,
+  DeckTimeLimitSettings,
+} from "./components/StudyFeatures";
 
 const DEMO_DECK = {
   id: "demo",
@@ -27,6 +37,8 @@ const DEMO_DECK = {
   practiceMode: "typing",
   unlockedClasses: null,
   lockAt: null,
+  timeLimitMinutes: null,
+  isExamMode: true,
   isDemo: true,
   words: DEMO_WORDS,
 };
@@ -193,6 +205,12 @@ export function App() {
   const [isUpdatingAccess, setIsUpdatingAccess] = useState(false);
   const [isUpdatingLockAt, setIsUpdatingLockAt] = useState(false);
   const [isUpdatingMaxAttempts, setIsUpdatingMaxAttempts] = useState(false);
+  const [isUpdatingTimeLimit, setIsUpdatingTimeLimit] = useState(false);
+  const [isUpdatingExamMode, setIsUpdatingExamMode] = useState(false);
+  const [deckToEdit, setDeckToEdit] = useState(null);
+  const [isSavingDeckEdit, setIsSavingDeckEdit] = useState(false);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [progressStudent, setProgressStudent] = useState(null);
   const [selectedDeckId, setSelectedDeckId] = useState("demo");
   const [connection, setConnection] = useState(isSupabaseConfigured ? "connecting" : "demo");
   const [importProgress, setImportProgress] = useState(0);
@@ -245,7 +263,9 @@ export function App() {
       suppressFullscreenPenaltyRef.current = false;
     }
     const resolvedViolationReason = violationReason !== null ? violationReason : (finalStudy?.violationReason || null);
+    const mistakeWords = finalStudy?.mistakeWords || [];
     const result = {
+      deckId: finalStudy.deckId,
       deckTitle: finalStudy.deckTitle,
       mode: finalStudy.mode,
       score: finalStudy.score,
@@ -253,10 +273,21 @@ export function App() {
       total: finalStudy.items.length,
       completed,
       violationReason: resolvedViolationReason,
+      mistakeWords,
     };
     setLastResult(result);
     if (completed) setView("results");
     setStudy(null);
+
+    if (account?.id && finalStudy.deckId && typeof localStorage !== "undefined") {
+      try {
+        if (finalStudy.isMistakePractice) {
+          localStorage.setItem(`vocab_mistakes_${account.id}_${finalStudy.deckId}`, JSON.stringify(mistakeWords));
+        } else if (mistakeWords.length > 0) {
+          localStorage.setItem(`vocab_mistakes_${account.id}_${finalStudy.deckId}`, JSON.stringify(mistakeWords));
+        }
+      } catch { /* ignore */ }
+    }
 
     saveStudySession({
       deckId: finalStudy.deckId,
@@ -281,6 +312,58 @@ export function App() {
       console.error("Không thể lưu phiên học", error);
       showToast("Lỗi khi lưu kết quả lên máy chủ: " + (error.message || error));
     });
+  }, [account?.id, showToast]);
+
+  const getSavedMistakes = useCallback((deckId) => {
+    if (!account?.id || !deckId || typeof localStorage === "undefined") return [];
+    try {
+      const raw = localStorage.getItem(`vocab_mistakes_${account.id}_${deckId}`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch { /* ignore */ }
+    return [];
+  }, [account?.id]);
+
+  const handleDeckTimeLimit = useCallback(async (deckId, minutes) => {
+    setIsUpdatingTimeLimit(true);
+    try {
+      await updateDeckTimeLimit(deckId, minutes);
+      setDecks((current) => current.map((d) => (d.id === deckId ? { ...d, timeLimitMinutes: minutes } : d)));
+      showToast(minutes ? `Đã đặt thời gian làm bài: ${minutes} phút` : "Đã chuyển sang không giới hạn thời gian");
+    } catch (err) {
+      showToast(err.message || "Không thể cập nhật thời gian làm bài");
+    } finally {
+      setIsUpdatingTimeLimit(false);
+    }
+  }, [showToast]);
+
+  const handleDeckExamMode = useCallback(async (deckId, isExamMode) => {
+    setIsUpdatingExamMode(true);
+    try {
+      await updateDeckExamMode(deckId, isExamMode);
+      setDecks((current) => current.map((d) => (d.id === deckId ? { ...d, isExamMode } : d)));
+      showToast(isExamMode ? "Đã bật chế độ kiểm tra nghiêm ngặt (Toàn màn hình & Chống gian lận)" : "Đã chuyển sang chế độ luyện tập tự do");
+    } catch (err) {
+      showToast(err.message || "Không thể cập nhật chế độ kiểm tra");
+    } finally {
+      setIsUpdatingExamMode(false);
+    }
+  }, [showToast]);
+
+  const handleSaveDeckWords = useCallback(async (deckId, newTitle, newWords) => {
+    setIsSavingDeckEdit(true);
+    try {
+      await updateDeckWords(deckId, newTitle, newWords);
+      setDecks((current) => current.map((d) => (d.id === deckId ? { ...d, title: newTitle, wordCount: newWords.length, words: newWords } : d)));
+      setDeckToEdit(null);
+      showToast(`Đã lưu cập nhật cho bộ từ "${newTitle}" (${newWords.length} từ)`);
+    } catch (err) {
+      showToast(err.message || "Không thể lưu cập nhật bộ từ");
+    } finally {
+      setIsSavingDeckEdit(false);
+    }
   }, [showToast]);
 
   useEffect(() => () => {
@@ -384,34 +467,41 @@ export function App() {
     if (view === "study" && study?.mode === "typing" && !study.feedback) typingInputRef.current?.focus();
   }, [view, study?.mode, study?.index, study?.feedback]);
 
-  const startStudy = useCallback(() => {
+  const startStudy = useCallback((overrideWords = null, isMistakePractice = false) => {
     if (account?.role !== "student") {
       showToast("Giáo viên chỉ thiết lập bài; tài khoản học sinh mới có thể làm bài.");
       return;
     }
-    if (!selectedDeck?.words.length) {
+    const wordsToStudy = overrideWords || selectedDeck?.words || [];
+    if (!wordsToStudy.length) {
       showToast("Bộ từ này chưa có từ để học.");
       return;
     }
-    if (isDeckLockedForStudent(selectedDeck, account)) {
-      const studentLockAt = getDeckLockAtForStudent(selectedDeck, account);
-      if (studentLockAt && Date.now() > new Date(studentLockAt).getTime()) {
-        showToast("Bộ từ này đã hết hạn làm bài đối với lớp của bạn.");
-      } else {
-        showToast(`Bộ từ này đang khóa đối với lớp ${account.className || "của bạn"}.`);
+    if (!isMistakePractice) {
+      if (isDeckLockedForStudent(selectedDeck, account)) {
+        const studentLockAt = getDeckLockAtForStudent(selectedDeck, account);
+        if (studentLockAt && Date.now() > new Date(studentLockAt).getTime()) {
+          showToast("Bộ từ này đã hết hạn làm bài đối với lớp của bạn.");
+        } else {
+          showToast(`Bộ từ này đang khóa đối với lớp ${account.className || "của bạn"}.`);
+        }
+        return;
       }
-      return;
+      if (isDeckAttemptsExhausted(selectedDeck, account, sessions)) {
+        showToast(`Bạn đã sử dụng hết số lần làm bài cho phép của bài kiểm tra này (${selectedDeck.maxAttempts} lần).`);
+        return;
+      }
     }
-    if (isDeckAttemptsExhausted(selectedDeck, account, sessions)) {
-      showToast(`Bạn đã sử dụng hết số lần làm bài cho phép của bài kiểm tra này (${selectedDeck.maxAttempts} lần).`);
-      return;
-    }
+
+    const isExam = !isMistakePractice && (selectedDeck?.isExamMode !== false);
+    const timeLimitSeconds = !isMistakePractice && selectedDeck?.timeLimitMinutes ? selectedDeck.timeLimitMinutes * 60 : null;
+
     const mode = PRACTICE_MODES.some((item) => item.id === selectedDeck.practiceMode)
       ? selectedDeck.practiceMode
       : "typing";
     suppressFullscreenPenaltyRef.current = false;
     fullscreenSeenRef.current = Boolean(document.fullscreenElement);
-    if (!document.fullscreenElement) {
+    if (isExam && !document.fullscreenElement) {
       try {
         void document.documentElement.requestFullscreen().catch(() => {
           showToast("Hãy bấm ‘Vào toàn màn hình’ trước khi tiếp tục làm bài.");
@@ -422,8 +512,8 @@ export function App() {
     }
     setStudy({
       deckId: selectedDeck.id,
-      deckTitle: selectedDeck.title,
-      items: shuffle(selectedDeck.words),
+      deckTitle: isMistakePractice ? `${selectedDeck.title} (Ôn từ sai)` : selectedDeck.title,
+      items: shuffle(wordsToStudy),
       index: 0,
       mode,
       score: 0,
@@ -435,10 +525,23 @@ export function App() {
       wordMistakes: 0,
       violationCount: 0,
       disabledChoices: [],
+      isExamMode: isExam,
+      timeLimitSeconds,
+      isMistakePractice,
+      mistakeWords: [],
     });
     setView("study");
     setLastResult(null);
   }, [account, selectedDeck, sessions, showToast]);
+
+  const handlePracticeMistakes = useCallback((wordsToPractice = null) => {
+    const list = wordsToPractice || getSavedMistakes(selectedDeck?.id);
+    if (!list || !list.length) {
+      showToast("Không có từ sai nào để ôn lại.");
+      return;
+    }
+    startStudy(list, true);
+  }, [getSavedMistakes, selectedDeck?.id, showToast, startStudy]);
 
   useEffect(() => {
     const context = document.modelContext;
@@ -467,7 +570,7 @@ export function App() {
   }, [account?.role, selectedDeck, startStudy]);
 
   useEffect(() => {
-    if (view !== "study" || !study || account?.role !== "student") return undefined;
+    if (view !== "study" || !study || account?.role !== "student" || study.isExamMode === false) return undefined;
     if (document.fullscreenElement) fullscreenSeenRef.current = true;
 
     const penalizeViolation = (type) => {
@@ -521,7 +624,7 @@ export function App() {
 
   const answerCurrent = useCallback((isCorrect, chosenChoice = null) => {
     if (!study || (study.feedback && study.feedback === "correct")) return;
-    if (account?.role === "student" && !document.fullscreenElement) {
+    if (account?.role === "student" && study.isExamMode !== false && !document.fullscreenElement) {
       showToast("Vui lòng bấm 'Bật toàn màn hình' ở ô thông báo phía trên để tiếp tục làm bài.");
       return;
     }
@@ -570,6 +673,12 @@ export function App() {
         ? [...(study.disabledChoices || []), chosenChoice]
         : (study.disabledChoices || []);
 
+      const currentItem = study.items[study.index];
+      const mistakesList = [...(study.mistakeWords || [])];
+      if (currentItem && !mistakesList.some((w) => w.id === currentItem.id)) {
+        mistakesList.push(currentItem);
+      }
+
       if (nextMistakes === 1) {
         const nextStudy = {
           ...study,
@@ -578,6 +687,7 @@ export function App() {
           wordMistakes: 1,
           disabledChoices: nextDisabledChoices,
           input: "",
+          mistakeWords: mistakesList,
         };
         setStudy(nextStudy);
         window.clearTimeout(answerTimerRef.current);
@@ -593,6 +703,7 @@ export function App() {
           wordMistakes: 2,
           disabledChoices: nextDisabledChoices,
           input: "",
+          mistakeWords: mistakesList,
         };
         setStudy(nextStudy);
         window.clearTimeout(answerTimerRef.current);
@@ -601,7 +712,6 @@ export function App() {
           typingInputRef.current?.focus();
         }, 1100);
       } else {
-        const currentItem = study.items[study.index];
         const nextStudy = {
           ...study,
           feedback: "wrong-final",
@@ -609,6 +719,7 @@ export function App() {
           wordMistakes: 3,
           answered: study.answered + 1,
           disabledChoices: nextDisabledChoices,
+          mistakeWords: mistakesList,
         };
         setStudy(nextStudy);
         window.clearTimeout(answerTimerRef.current);
@@ -1144,6 +1255,12 @@ export function App() {
               <small>{canManage ? "Giáo viên quản trị" : account.className ? `Lớp ${account.className}` : "Học sinh"}</small>
             </span>
           </span>
+          {view !== "study" && (
+            <button className="icon-text-button leaderboard-nav-btn" type="button" onClick={() => setShowLeaderboard(true)} title="Xem bảng xếp hạng thành tích">
+              <Trophy size={17} />
+              <span>Xếp hạng</span>
+            </button>
+          )}
           {canManage && view !== "study" && <button className="icon-button student-manage-shortcut" type="button" onClick={() => setView((current) => current === "students" ? "create-deck" : "students")} aria-label={view === "students" ? "Mở tạo bộ từ" : "Quản lý học sinh"} title="Quản lý học sinh"><Users size={18} /></button>}
           {!canManage && view !== "study" && <button className="icon-text-button" type="button" onClick={toggleFullscreen}>
             {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
@@ -1321,6 +1438,8 @@ export function App() {
               isUpdatingAccess={isUpdatingAccess}
               isUpdatingLockAt={isUpdatingLockAt}
               isUpdatingMaxAttempts={isUpdatingMaxAttempts}
+              isUpdatingTimeLimit={isUpdatingTimeLimit}
+              isUpdatingExamMode={isUpdatingExamMode}
               isDeletingDeck={isDeletingDeck}
               importProgress={importProgress}
               onPickPdf={() => fileInputRef.current?.click()}
@@ -1329,8 +1448,24 @@ export function App() {
               onClassAccessChange={handleDeckClassAccess}
               onLockAtChange={handleDeckLockAt}
               onMaxAttemptsChange={handleDeckMaxAttempts}
+              onTimeLimitChange={handleDeckTimeLimit}
+              onExamModeChange={handleDeckExamMode}
               onDeleteDeck={(deck) => setDeckToDelete(deck)}
+              onEditDeck={(deck) => setDeckToEdit(deck)}
+              onFlashcard={() => setView("flashcard")}
+              onPracticeMistakes={handlePracticeMistakes}
+              savedMistakesCount={getSavedMistakes(selectedDeck?.id).length}
               onNavigateCreateDeck={() => setView("create-deck")}
+            />
+          )}
+          {view === "flashcard" && selectedDeck && (
+            <FlashcardView
+              deck={selectedDeck}
+              onBack={() => setView("deck")}
+              onStartQuiz={() => {
+                setView("deck");
+                startStudy();
+              }}
             />
           )}
           {view === "students" && canManage && (
@@ -1352,6 +1487,7 @@ export function App() {
               onResetPasswords={handleResetPasswords}
               isDeletingRoster={isDeletingRoster}
               onDeleteRoster={handleDeleteRoster}
+              onViewStudentProgress={(student) => setProgressStudent(student)}
             />
           )}
           {view === "import" && importDraft && (
@@ -1381,6 +1517,7 @@ export function App() {
               onAnswer={answerCurrent}
               onInput={(input) => setStudy((current) => ({ ...current, input }))}
               onTypingSubmit={submitTyping}
+              onTimeUp={() => finishStudy(study, false, "Hết giờ làm bài")}
             />
           )}
           {view === "results" && lastResult && (
@@ -1390,10 +1527,34 @@ export function App() {
               practiceCount={(sessions || []).filter((s) => s.deck_id === selectedDeck?.id).length}
               onAgain={startStudy}
               onHome={() => setView(canManage ? "create-deck" : "deck")}
+              onPracticeMistakes={handlePracticeMistakes}
             />
           )}
         </section>
       </main>
+
+      <LeaderboardModal
+        isOpen={showLeaderboard}
+        onClose={() => setShowLeaderboard(false)}
+        decks={decks}
+        students={students}
+        studentResults={studentResults}
+        currentAccount={account}
+      />
+      <StudentProgressModal
+        isOpen={Boolean(progressStudent)}
+        onClose={() => setProgressStudent(null)}
+        student={progressStudent}
+        studentResults={studentResults}
+        decks={decks}
+      />
+      <EditDeckModal
+        isOpen={Boolean(deckToEdit)}
+        onClose={() => setDeckToEdit(null)}
+        deck={deckToEdit}
+        onSave={handleSaveDeckWords}
+        isSaving={isSavingDeckEdit}
+      />
 
       {leaveDialog && (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setLeaveDialog(false)}>
@@ -1593,7 +1754,7 @@ function LoginView({ onLogin }) {
   );
 }
 
-function InstructorView({ students, rosters, studentResults, decks = [], generatedAccounts, isGenerating, isRefreshingResults, isExportingResults, isResettingPasswords, isDeletingRoster, isDemo, onGenerate, onExport, onExportResults, onRefreshResults, onResetPasswords, onDeleteRoster }) {
+function InstructorView({ students, rosters, studentResults, decks = [], generatedAccounts, isGenerating, isRefreshingResults, isExportingResults, isResettingPasswords, isDeletingRoster, isDemo, onGenerate, onExport, onExportResults, onRefreshResults, onResetPasswords, onDeleteRoster, onViewStudentProgress }) {
   const rosterInputRef = useRef(null);
   const [rosterDraft, setRosterDraft] = useState(null);
   const [classNameInput, setClassNameInput] = useState("");
@@ -2054,6 +2215,7 @@ function InstructorView({ students, rosters, studentResults, decks = [], generat
                     <th>Số lần luyện</th>
                     <th>Lỗi/vi phạm</th>
                     <th>Lần thi gần nhất</th>
+                    <th>Tiến trình</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2109,6 +2271,20 @@ function InstructorView({ students, rosters, studentResults, decks = [], generat
                         {result?.completedAt
                           ? new Intl.DateTimeFormat("vi-VN", { dateStyle: "short", timeStyle: "short" }).format(new Date(result.completedAt))
                           : "—"}
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="table-action-btn progress-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (onViewStudentProgress) onViewStudentProgress(student);
+                          }}
+                          title={`Xem biểu đồ tiến trình của ${student.displayName}`}
+                        >
+                          <BarChart3 size={14} />
+                          <span>Chi tiết</span>
+                        </button>
                       </td>
                     </tr>
                   );
@@ -2785,6 +2961,8 @@ function HomeView({
   isUpdatingAccess,
   isUpdatingLockAt,
   isUpdatingMaxAttempts,
+  isUpdatingTimeLimit,
+  isUpdatingExamMode,
   isDeletingDeck,
   importProgress,
   onPickPdf,
@@ -2793,7 +2971,13 @@ function HomeView({
   onClassAccessChange,
   onLockAtChange,
   onMaxAttemptsChange,
+  onTimeLimitChange,
+  onExamModeChange,
   onDeleteDeck,
+  onEditDeck,
+  onFlashcard,
+  onPracticeMistakes,
+  savedMistakesCount = 0,
   onNavigateCreateDeck,
 }) {
   const posCounts = useMemo(() => {
@@ -2819,6 +3003,17 @@ function HomeView({
           <p>{deck.sourceFileName || "Bộ từ vựng của lớp"}</p>
         </div>
         <div className="home-head-actions">
+          {canManage && !deck.isDemo && (
+            <button
+              className="secondary-button compact edit-deck-action"
+              type="button"
+              onClick={() => onEditDeck && onEditDeck(deck)}
+              title="Chỉnh sửa nội dung bộ từ (sửa tên, sửa/thêm/xóa từ)"
+            >
+              <Pencil size={17} />
+              <span>Sửa bộ từ</span>
+            </button>
+          )}
           {canManage && !deck.isDemo && (
             <button className="danger-button compact delete-deck-action" type="button" onClick={() => onDeleteDeck(deck)} disabled={isDeletingDeck} title="Xóa bộ từ này">
               {isDeletingDeck ? <LoaderCircle className="spin" size={17} /> : <Trash2 size={17} />}
@@ -2914,6 +3109,22 @@ function HomeView({
               </section>
 
               <section className="assignment-panel">
+                <DeckExamModeSettings
+                  isExamMode={deck.isExamMode}
+                  onChange={(val) => onExamModeChange(deck.id, val)}
+                  disabled={isUpdatingExamMode}
+                />
+              </section>
+
+              <section className="assignment-panel">
+                <DeckTimeLimitSettings
+                  timeLimitMinutes={deck.timeLimitMinutes}
+                  onChange={(val) => onTimeLimitChange(deck.id, val)}
+                  disabled={isUpdatingTimeLimit}
+                />
+              </section>
+
+              <section className="assignment-panel">
                 <div className="section-title-row">
                   <div><span className="eyebrow">Quyền học theo lớp</span><h2>Mở / Khóa bài tập cho từng lớp</h2></div>
                   {isUpdatingAccess && <span className="points-rule"><LoaderCircle className="spin" size={15} /> Đang lưu…</span>}
@@ -2980,13 +3191,49 @@ function HomeView({
               </span>
             </div>
           )}
+
+          <div className="study-prep-box">
+            <button className="prep-action-card flashcard-prep" type="button" onClick={onFlashcard}>
+              <div className="prep-icon"><Layers3 size={24} /></div>
+              <div className="prep-text">
+                <strong>Lật thẻ Flashcard (Ôn tập)</strong>
+                <span>Lướt qua từ vựng & nghe phát âm trước khi thi (Tự do, không trừ điểm)</span>
+              </div>
+              <ChevronRight size={18} />
+            </button>
+            {savedMistakesCount > 0 && (
+              <button className="prep-action-card mistakes-prep" type="button" onClick={onPracticeMistakes}>
+                <div className="prep-icon"><AlertTriangle size={24} /></div>
+                <div className="prep-text">
+                  <strong>Ôn lại {savedMistakesCount} từ hay sai</strong>
+                  <span>Luyện tập riêng các từ bạn từng làm chưa đúng ở bài kiểm tra này</span>
+                </div>
+                <ChevronRight size={18} />
+              </button>
+            )}
+          </div>
+
           <div className="section-title-row">
-            <div><span className="eyebrow">Thể loại được giao</span><h2>{assignedMode.title}</h2></div>
-            <span className="points-rule">Đúng +10 · Sai lần 1: −25% · Sai lần 2: −75% · Thoát/vi phạm: −25% / −75%</span>
+            <div>
+              <span className="eyebrow">{deck.isExamMode !== false ? "Bài kiểm tra chính thức" : "Bài luyện tập"}</span>
+              <h2>{assignedMode.title}</h2>
+            </div>
+            <span className="points-rule">
+              {deck.isExamMode !== false
+                ? "Đúng +10 · Sai lần 1: −25% · Sai lần 2: −75% · Thoát màn hình: −25% / −75%"
+                : "Luyện tập tự do · Không trừ điểm vi phạm"}
+            </span>
           </div>
           <button className={`mode-card assigned-mode-card ${assignedMode.accent}`} type="button" onClick={onStart}>
             <span className="mode-icon"><AssignedIcon size={25} /></span>
-            <span className="mode-copy"><b>Bắt đầu {assignedMode.title.toLowerCase()}</b><small>{assignedMode.description}. Bài sẽ tự chuyển sang toàn màn hình.</small></span>
+            <span className="mode-copy">
+              <b>{deck.isExamMode !== false ? `Bắt đầu ${assignedMode.title.toLowerCase()} (Kiểm tra)` : `Bắt đầu ${assignedMode.title.toLowerCase()} (Luyện tập)`}</b>
+              <small>
+                {deck.isExamMode !== false
+                  ? `${assignedMode.description}. Bài sẽ tự chuyển sang toàn màn hình${deck.timeLimitMinutes ? ` · Giới hạn ${deck.timeLimitMinutes} phút` : ""}.`
+                  : `${assignedMode.description}. Chế độ luyện tập tự do không tính vi phạm.`}
+              </small>
+            </span>
             <ChevronRight className="mode-arrow" size={21} />
           </button>
         </>
@@ -3051,7 +3298,32 @@ function ImportView({ draft, availableClasses = [], isSaving, connection, onBack
   );
 }
 
-function StudyView({ study, currentWord, quizChoices, typingInputRef, isFullscreen, onBack, onFullscreen, onAnswer, onInput, onTypingSubmit }) {
+function StudyView({ study, currentWord, quizChoices, typingInputRef, isFullscreen, onBack, onFullscreen, onAnswer, onInput, onTypingSubmit, onTimeUp }) {
+  const [secondsLeft, setSecondsLeft] = useState(study.timeLimitSeconds || null);
+
+  useEffect(() => {
+    if (!study.timeLimitSeconds) return undefined;
+    const interval = setInterval(() => {
+      setSecondsLeft((prev) => {
+        if (prev === null) return null;
+        if (prev <= 1) {
+          clearInterval(interval);
+          if (onTimeUp) onTimeUp();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [study.timeLimitSeconds, onTimeUp]);
+
+  const formatTimer = (secs) => {
+    if (secs === null) return "";
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  };
+
   const progress = ((study.index + 1) / study.items.length) * 100;
   const resultClass = study.feedback ? `feedback-${study.feedback}` : "";
   const assignedMode = PRACTICE_MODES.find((mode) => mode.id === study.mode) || PRACTICE_MODES[0];
@@ -3065,33 +3337,49 @@ function StudyView({ study, currentWord, quizChoices, typingInputRef, isFullscre
           <div className="eyebrow">{String(study.index + 1).padStart(2, "0")} / {String(study.items.length).padStart(2, "0")}</div>
           <h1>{study.deckTitle}</h1>
         </div>
-        <div className="session-points"><Sparkles size={18} /><span>Điểm phiên</span><strong>{study.score}</strong></div>
+        <div className="study-head-metrics">
+          {secondsLeft !== null && (
+            <div className={`countdown-timer ${secondsLeft < 60 ? "is-urgent" : ""}`} title="Thời gian làm bài còn lại">
+              <Timer size={17} />
+              <span>{formatTimer(secondsLeft)}</span>
+            </div>
+          )}
+          <div className="session-points"><Sparkles size={18} /><span>Điểm phiên</span><strong>{study.score}</strong></div>
+        </div>
       </div>
       <div className="progress-line"><span style={{ width: `${progress}%` }} /></div>
       <div className="assigned-study-mode"><AssignedIcon size={18} /><span>Giáo viên đã giao</span><strong>{assignedMode.title}</strong></div>
-      {!isFullscreen && (
-        <div className={`fullscreen-violation-alert ${study.violationCount > 0 ? "is-violated" : ""}`}>
-          <div className="alert-content">
-            <div className="alert-icon-wrap">
-              <CircleAlert size={22} />
+
+      {study.isExamMode !== false ? (
+        !isFullscreen && (
+          <div className={`fullscreen-violation-alert ${study.violationCount > 0 ? "is-violated" : ""}`}>
+            <div className="alert-content">
+              <div className="alert-icon-wrap">
+                <CircleAlert size={22} />
+              </div>
+              <div className="alert-text">
+                <strong>
+                  {study.violationCount > 0
+                    ? `⚠️ Cảnh báo vi phạm: Đã phạm lỗi ${study.violationCount} lần!`
+                    : "⚠️ Yêu cầu bật toàn màn hình khi làm bài"}
+                </strong>
+                <p>
+                  {study.violationCount > 0
+                    ? `Bạn đã bị trừ ${study.violationCount === 1 ? "25%" : "75%"} điểm. Hãy bấm ô bên cạnh để bật lại toàn màn hình ngay.`
+                    : "Thoát toàn màn hình khi làm bài: lần đầu trừ 25% điểm, lần hai trừ 75% điểm, lần ba hủy bài thi (0 điểm)."}
+                </p>
+              </div>
             </div>
-            <div className="alert-text">
-              <strong>
-                {study.violationCount > 0
-                  ? `⚠️ Cảnh báo vi phạm: Đã phạm lỗi ${study.violationCount} lần!`
-                  : "⚠️ Yêu cầu bật toàn màn hình khi làm bài"}
-              </strong>
-              <p>
-                {study.violationCount > 0
-                  ? `Bạn đã bị trừ ${study.violationCount === 1 ? "25%" : "75%"} điểm. Hãy bấm ô bên cạnh để bật lại toàn màn hình ngay.`
-                  : "Thoát toàn màn hình khi làm bài: lần đầu trừ 25% điểm, lần hai trừ 75% điểm, lần ba hủy bài thi (0 điểm)."}
-              </p>
-            </div>
+            <button className="enable-fullscreen-btn" type="button" onClick={onFullscreen}>
+              <Maximize2 size={18} />
+              <span>Bật toàn màn hình</span>
+            </button>
           </div>
-          <button className="enable-fullscreen-btn" type="button" onClick={onFullscreen}>
-            <Maximize2 size={18} />
-            <span>Bật toàn màn hình</span>
-          </button>
+        )
+      ) : (
+        <div className="practice-mode-indicator">
+          <BookOpen size={16} />
+          <span>🌿 Chế độ luyện tập tự do (Không bắt buộc toàn màn hình, không trừ điểm vi phạm)</span>
         </div>
       )}
 
@@ -3122,7 +3410,14 @@ function StudyView({ study, currentWord, quizChoices, typingInputRef, isFullscre
             />
             <button type="submit" disabled={!study.input.trim() || Boolean(study.feedback)}>Kiểm tra <kbd>Enter</kbd></button>
           </form>
-          {study.feedback === "wrong-final" && <div className="correct-answer">Đáp án: <strong>{currentWord.term}</strong></div>}
+          {study.feedback === "wrong-final" && (
+            <div className="correct-answer">
+              <span>Đáp án: <strong>{currentWord.term}</strong></span>
+              <button type="button" className="speak-answer-btn" onClick={() => speakWord(currentWord.term)} title="Nghe phát âm">
+                <Volume2 size={16} />
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -3193,21 +3488,34 @@ function StudyView({ study, currentWord, quizChoices, typingInputRef, isFullscre
             <CircleAlert size={19} />
           )}
           <span>{study.feedbackMessage || (study.feedback === "correct" ? "Chính xác! +10 điểm" : "Chưa đúng")}</span>
+          {study.feedback === "correct" && (
+            <button
+              type="button"
+              className="feedback-audio-btn"
+              onClick={() => speakWord(currentWord.term)}
+              title="Nghe phát âm từ này"
+            >
+              <Volume2 size={16} />
+            </button>
+          )}
         </div>
       )}
 
       <p className="penalty-reminder-note">
-        * Quy tắc tính điểm & phạm lỗi: Lần đầu phạm lỗi trừ 25% số điểm, lần hai trừ 75% số điểm, lần ba 0 điểm. Rời bài sớm hoặc thoát toàn màn hình cũng bị trừ theo quy tắc này.
+        {study.isExamMode !== false
+          ? "* Quy tắc tính điểm & phạm lỗi: Lần đầu phạm lỗi trừ 25% số điểm, lần hai trừ 75% số điểm, lần ba 0 điểm. Rời bài sớm hoặc thoát toàn màn hình cũng bị trừ theo quy tắc này."
+          : "* Chế độ luyện tập: Bạn có thể vừa làm vừa ôn bài thoải mái mà không bị trừ điểm vi phạm toàn màn hình."}
       </p>
     </div>
   );
 }
 
-function ResultView({ result, practiceCount, maxAttempts, onAgain, onHome }) {
+function ResultView({ result, practiceCount, maxAttempts, onAgain, onHome, onPracticeMistakes }) {
   const percentage = Math.round((result.correct / result.total) * 100);
   const violationText = formatViolationText(result);
   const hasViolation = Boolean(result.violationReason);
   const isAttemptsExhausted = Boolean(maxAttempts && practiceCount >= maxAttempts);
+  const mistakeCount = result.mistakeWords?.length || 0;
 
   return (
     <div className="result-view">
@@ -3235,6 +3543,42 @@ function ResultView({ result, practiceCount, maxAttempts, onAgain, onHome }) {
           </div>
         )}
       </div>
+
+      {mistakeCount > 0 && (
+        <div className="result-mistakes-section">
+          <div className="mistakes-section-title">
+            <AlertTriangle size={18} />
+            <span>Bạn đã làm chưa đúng <b>{mistakeCount}</b> từ trong bài kiểm tra này:</span>
+          </div>
+          <div className="mistakes-word-chips">
+            {result.mistakeWords.map((w) => (
+              <div key={w.id} className="mistake-chip">
+                <div className="mistake-term">
+                  <b>{w.term}</b>
+                  <small>({POS_LABELS[w.partOfSpeech] || w.partOfSpeech})</small>
+                  <button
+                    type="button"
+                    className="chip-speak-btn"
+                    onClick={() => speakWord(w.term)}
+                    title="Nghe phát âm"
+                  >
+                    <Volume2 size={13} />
+                  </button>
+                </div>
+                <span className="mistake-meaning">{w.meaning}</span>
+              </div>
+            ))}
+          </div>
+          <button
+            className="accent-button practice-mistakes-btn"
+            type="button"
+            onClick={() => onPracticeMistakes && onPracticeMistakes(result.mistakeWords)}
+          >
+            <AlertTriangle size={17} />
+            <span>Ôn lại ngay {mistakeCount} từ sai này</span>
+          </button>
+        </div>
+      )}
 
       {isAttemptsExhausted ? (
         <div className="attempts-exhausted-result-banner">

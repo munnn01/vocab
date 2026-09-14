@@ -147,3 +147,17 @@ export function normalizeAnswer(value = "") {
     .replace(/\s+/g, " ")
     .trim();
 }
+
+export function speakWord(term) {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+  try {
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(term);
+    utterance.lang = "en-US";
+    utterance.rate = 0.9;
+    window.speechSynthesis.speak(utterance);
+  } catch (err) {
+    console.warn("Speech synthesis error", err);
+  }
+}
+
