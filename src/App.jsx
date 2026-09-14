@@ -1296,7 +1296,7 @@ export function App() {
           </aside>
         )}
 
-        <section className={`content-stage ${view === "study" ? "study-content-stage" : ""}`}>
+        <section className={`content-stage ${view === "study" ? "study-content-stage" : ""} ${view === "students" ? "instructor-content-stage" : ""}`}>
           {((view === "create-deck" && canManage) || (view === "home" && canManage)) && (
             <CreateDeckView
               isImporting={isImporting}
@@ -1601,7 +1601,13 @@ function InstructorView({ students, rosters, studentResults, decks = [], generat
   const [selectedRosterId, setSelectedRosterId] = useState("");
   const [selectedClassTab, setSelectedClassTab] = useState("all");
   const [showPasswords, setShowPasswords] = useState(false);
+  const [selectedStudentId, setSelectedStudentId] = useState(null);
+  const [selectedNewAccountId, setSelectedNewAccountId] = useState(null);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    setSelectedStudentId(null);
+  }, [selectedClassTab]);
 
   const customDecks = useMemo(() => (decks || []).filter((d) => !d.isDemo), [decks]);
   const targetDecks = useMemo(() => customDecks.length > 0 ? customDecks : (decks || []), [customDecks, decks]);
@@ -1675,6 +1681,11 @@ function InstructorView({ students, rosters, studentResults, decks = [], generat
     if (selectedClassTab === "all") return students;
     return students.filter((student) => student.className === selectedClassTab);
   }, [students, selectedClassTab]);
+
+  const selectedStudent = useMemo(() => {
+    if (!selectedStudentId) return null;
+    return filteredStudents.find((student) => student.id === selectedStudentId) || null;
+  }, [filteredStudents, selectedStudentId]);
 
   const filteredResultCount = useMemo(() => {
     let count = 0;
@@ -1874,15 +1885,23 @@ function InstructorView({ students, rosters, studentResults, decks = [], generat
                 </tr>
               </thead>
               <tbody>
-                {generatedAccounts.map((student, index) => (
-                  <tr key={student.id}>
-                    <td>{index + 1}</td>
-                    <td>{student.displayName}</td>
-                    <td><code>{student.username}</code></td>
-                    <td><code>{showPasswords ? student.password : "••••••••••"}</code></td>
-                    <td><span className="class-name-tag">{student.className}</span></td>
-                  </tr>
-                ))}
+                {generatedAccounts.map((student, index) => {
+                  const isSelected = selectedNewAccountId === student.id;
+                  return (
+                    <tr
+                      key={student.id}
+                      className={isSelected ? "is-selected" : ""}
+                      onClick={() => setSelectedNewAccountId((prev) => (prev === student.id ? null : student.id))}
+                      title={isSelected ? "Bấm để bỏ bôi màu dòng này" : "Bấm để bôi màu theo dõi dòng này"}
+                    >
+                      <td>{index + 1}</td>
+                      <td>{student.displayName}</td>
+                      <td><code>{student.username}</code></td>
+                      <td><code>{showPasswords ? student.password : "••••••••••"}</code></td>
+                      <td><span className="class-name-tag">{student.className}</span></td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -2002,33 +2021,56 @@ function InstructorView({ students, rosters, studentResults, decks = [], generat
         )}
 
         {filteredStudents.length ? (
-          <div className="student-table-wrap">
-            <table className="student-table result-table">
-              <thead>
-                <tr>
-                  <th>Học sinh</th>
-                  <th>Tên đăng nhập</th>
-                  <th>Mật khẩu</th>
-                  <th>Lớp</th>
-                  {sortedDecks.map((deck) => (
-                    <th key={deck.id} title={`Điểm bài: ${deck.title}`}>
-                      {deck.title}
-                    </th>
-                  ))}
-                  <th>Số lần luyện</th>
-                  <th>Lỗi/vi phạm</th>
-                  <th>Lần thi gần nhất</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredStudents.map((student) => {
-                  const result = latestResultByStudent.get(student.id);
-                  const practiceCount = practiceCountByStudent.get(student.id) || 0;
-                  const issue = formatViolationText(result);
-                  const badgeClass = getViolationBadgeClass(result);
-                  const rawPassword = student.initialPassword || generatedAccountMap.get(student.username) || generatedAccountMap.get(student.id);
-                  return (
-                    <tr key={student.id}>
+          <>
+            {selectedStudent && (
+              <div className="table-highlight-notice">
+                <span>
+                  Đang bôi màu dòng: <strong>{selectedStudent.displayName}</strong> ({selectedStudent.className ? `Lớp ${selectedStudent.className}` : "Chưa phân lớp"})
+                </span>
+                <button
+                  type="button"
+                  className="clear-highlight-btn"
+                  onClick={() => setSelectedStudentId(null)}
+                  title="Bỏ bôi màu dòng này"
+                >
+                  <X size={14} />
+                  <span>Bỏ chọn dòng</span>
+                </button>
+              </div>
+            )}
+            <div className="student-table-wrap">
+              <table className="student-table result-table">
+                <thead>
+                  <tr>
+                    <th>Học sinh</th>
+                    <th>Tên đăng nhập</th>
+                    <th>Mật khẩu</th>
+                    <th>Lớp</th>
+                    {sortedDecks.map((deck) => (
+                      <th key={deck.id} title={`Điểm bài: ${deck.title}`}>
+                        {deck.title}
+                      </th>
+                    ))}
+                    <th>Số lần luyện</th>
+                    <th>Lỗi/vi phạm</th>
+                    <th>Lần thi gần nhất</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredStudents.map((student) => {
+                    const result = latestResultByStudent.get(student.id);
+                    const practiceCount = practiceCountByStudent.get(student.id) || 0;
+                    const issue = formatViolationText(result);
+                    const badgeClass = getViolationBadgeClass(result);
+                    const rawPassword = student.initialPassword || generatedAccountMap.get(student.username) || generatedAccountMap.get(student.id);
+                    const isSelected = selectedStudentId === student.id;
+                    return (
+                      <tr
+                        key={student.id}
+                        className={isSelected ? "is-selected" : ""}
+                        onClick={() => setSelectedStudentId((prev) => (prev === student.id ? null : student.id))}
+                        title={isSelected ? "Bấm để bỏ bôi màu dòng này" : "Bấm để bôi màu theo dõi học sinh này"}
+                      >
                       <td>{student.displayName}</td>
                       <td><code>{student.username}</code></td>
                       <td>
@@ -2074,7 +2116,8 @@ function InstructorView({ students, rosters, studentResults, decks = [], generat
               </tbody>
             </table>
           </div>
-        ) : (
+        </>
+      ) : (
           <div className="empty-students">
             <GraduationCap size={28} />
             <strong>{students.length ? `Chưa có học sinh nào trong lớp "${selectedClassTab}"` : "Chưa có tài khoản học sinh"}</strong>
