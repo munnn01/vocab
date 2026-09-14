@@ -16,7 +16,7 @@ import {
   createDemoStudentAccounts, downloadRosterCredentialsXlsx, downloadRosterResultsXlsx,
   parseStudentRosterXlsx,
 } from "./lib/studentAccounts";
-import { English3DScene } from "./components/English3DScene";
+import { DriftingCloudsBackground } from "./components/DriftingCloudsBackground";
 
 const DEMO_DECK = {
   id: "demo",
@@ -1046,7 +1046,7 @@ function LoginView({ onLogin }) {
 
   return (
     <div className="auth-screen centered-auth">
-      <English3DScene />
+      <DriftingCloudsBackground />
 
       <div className="login-centered-container">
         <form className="login-card centered-card" onSubmit={submit}>

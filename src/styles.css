@@ -359,8 +359,9 @@ kbd { margin-left: 6px; padding: 3px 6px; border: 1px solid rgba(255,255,255,.14
 .sidebar-nav button span { margin-left: auto; min-width: 24px; padding: 3px 7px; border-radius: 99px; text-align: center; color: var(--ink); background: rgba(255,255,255,.08); font-size: .62rem; font-weight: 700; }
 
 /* ==========================================================================
-   3D ENGLISH KNOWLEDGE BACKGROUND & SCENE
+   REALISTIC 2D DRIFTING CLOUDS SKY BACKGROUND (NON-3D)
    ========================================================================== */
+.drifting-clouds-wrapper,
 .english-3d-wrapper {
   position: fixed;
   inset: 0;
@@ -369,6 +370,7 @@ kbd { margin-left: 6px; padding: 3px 6px; border: 1px solid rgba(255,255,255,.14
   z-index: 1;
 }
 
+.clouds-canvas-container,
 .three-canvas-container {
   position: absolute;
   inset: 0;
@@ -377,58 +379,30 @@ kbd { margin-left: 6px; padding: 3px 6px; border: 1px solid rgba(255,255,255,.14
   pointer-events: none;
 }
 
-.ambient-backdrop-glows {
+.sky-sun-glow {
   position: absolute;
-  inset: 0;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.glow-sphere {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(130px);
-  opacity: 0.18;
-  pointer-events: none;
-  animation: floatAmbient 18s ease-in-out infinite alternate;
-}
-
-.glow-emerald {
-  width: 480px;
-  height: 480px;
-  background: #10b981;
-  top: 10%;
+  top: -120px;
   right: 15%;
+  width: 580px;
+  height: 580px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 252, 230, 0.45) 0%, rgba(255, 240, 195, 0.18) 40%, rgba(255, 255, 255, 0) 70%);
+  filter: blur(40px);
+  pointer-events: none;
 }
 
-.glow-sapphire {
-  width: 540px;
-  height: 540px;
-  background: #38bdf8;
-  bottom: 12%;
-  left: 10%;
-  animation-duration: 22s;
-  animation-delay: -5s;
+.sky-horizon-haze {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 220px;
+  background: linear-gradient(to top, rgba(255, 255, 255, 0.4) 0%, rgba(255, 255, 255, 0) 100%);
+  pointer-events: none;
 }
 
-.glow-amber {
-  width: 380px;
-  height: 380px;
-  background: #f59e0b;
-  top: 45%;
-  left: 40%;
-  opacity: 0.12;
-  animation-duration: 26s;
-  animation-delay: -10s;
-}
-
-@keyframes floatAmbient {
-  0% { transform: translate(0, 0) scale(1); }
-  50% { transform: translate(40px, -30px) scale(1.1); }
-  100% { transform: translate(-30px, 40px) scale(0.95); }
-}
 /* ==========================================================================
-   AUTHENTICATION & CENTERED LOGIN SCREEN (3D SKY & CLOUDS)
+   AUTHENTICATION & CENTERED LOGIN SCREEN (REALISTIC SKY & CLOUDS)
    ========================================================================== */
 .auth-screen.centered-auth {
   min-height: 100vh;
@@ -437,8 +411,12 @@ kbd { margin-left: 6px; padding: 3px 6px; border: 1px solid rgba(255,255,255,.14
   justify-content: center;
   padding: 24px 16px;
   position: relative;
-  background: linear-gradient(180deg, #070d1e 0%, #0d1733 45%, #141a38 100%);
+  background: linear-gradient(180deg, #1b62a6 0%, #3086d0 32%, #68b4ee 68%, #b2e0fc 100%);
   overflow: hidden;
+}
+
+.auth-screen.centered-auth::before {
+  display: none;
 }
 
 .auth-screen::before {
