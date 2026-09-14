@@ -1,97 +1,131 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import { BookOpen, Lightbulb, ArrowUpRight } from "lucide-react";
 
-// Dữ liệu kiến thức tiếng Anh thực tế, học thuật, chuẩn bản xứ
-export const ENGLISH_KNOWLEDGE_CARDS = [
-  {
-    id: "card-1",
-    category: "Thành ngữ (Idiom)",
-    accent: "amber",
-    tag: "Giao tiếp tự nhiên",
-    term: "A blessing in disguise",
-    phonetic: "/ə ˈblesɪŋ ɪn dɪsˈɡaɪz/",
-    meaning: "Một điều may mắn ẩn sau khó khăn, trắc trở",
-    example: "Losing that job was a blessing in disguise; I found my true passion.",
-    pos: "idiom",
-    depth: 1.2,
-    defaultPos: { x: -38, y: -22, z: 20 },
-  },
-  {
-    id: "card-2",
-    category: "Gốc từ (Etymology)",
-    accent: "blue",
-    tag: "Mở rộng vốn từ",
-    term: "Gốc 'chron-' (Thời gian)",
-    phonetic: "Từ tiếng Hy Lạp khronos",
-    meaning: "Gốc cấu tạo nên các từ chỉ dòng thời gian",
-    example: "chronological (theo thứ tự), synchronize (đồng bộ), chronic (mãn tính)",
-    pos: "root",
-    depth: 0.9,
-    defaultPos: { x: 38, y: -26, z: -10 },
-  },
-  {
-    id: "card-3",
-    category: "Cặp từ dễ nhầm lẫn",
-    accent: "rose",
-    tag: "Phân biệt sắc thái",
-    term: "Affect (v) vs. Effect (n)",
-    phonetic: "/əˈfekt/  vs  /ɪˈfekt/",
-    meaning: "Affect là tác động (hành động); Effect là kết quả/ảnh hưởng (danh từ)",
-    example: "Smoking affects your health. / The law had a positive effect.",
-    pos: "usage",
-    depth: 1.4,
-    defaultPos: { x: -40, y: 22, z: 30 },
-  },
-  {
-    id: "card-4",
-    category: "Collocation tự nhiên",
-    accent: "emerald",
-    tag: "Cách nói bản xứ",
-    term: "Heavy rain (không dùng 'strong rain')",
-    phonetic: "Tính từ đi kèm danh từ",
-    meaning: "Trong tiếng Anh, mưa to luôn dùng 'heavy rain' hoặc 'torrential rain'",
-    example: "We were delayed by heavy rain on the highway.",
-    pos: "collocation",
-    depth: 0.8,
-    defaultPos: { x: 42, y: 20, z: 15 },
-  },
-  {
-    id: "card-5",
-    category: "Từ vựng học thuật C1",
-    accent: "purple",
-    tag: "IELTS / Học thuật",
-    term: "Feasible (adj)",
-    phonetic: "/ˈfiːzəbl/",
-    meaning: "Khả thi, có thể thực hiện được một cách hiệu quả",
-    example: "The committee agreed that the proposal was economically feasible.",
-    pos: "vocab",
-    depth: 1.1,
-    defaultPos: { x: 0, y: -40, z: -25 },
-  },
+// Danh sách từ vựng & thành ngữ tiếng Anh ý nghĩa trôi cùng các đám mây
+const CLOUD_WORDS = [
+  { word: "Serendipity", pos: "n", meaning: "Sự tình cờ may mắn" },
+  { word: "Resilient", pos: "adj", meaning: "Kiên cường, bền bỉ" },
+  { word: "Ephemeral", pos: "adj", meaning: "Phù du, thoáng qua" },
+  { word: "Luminous", pos: "adj", meaning: "Tỏa sáng rực rỡ" },
+  { word: "Perseverance", pos: "n", meaning: "Sự kiên trì bền chí" },
+  { word: "Eloquent", pos: "adj", meaning: "Hùng biện, lưu loát" },
+  { word: "Wanderlust", pos: "n", meaning: "Niềm khao khát khám phá" },
+  { word: "In a nutshell", pos: "idiom", meaning: "Tóm gọn lại là" },
+  { word: "Break a leg", pos: "idiom", meaning: "Chúc may mắn thành công" },
+  { word: "Keep an eye on", pos: "phrase", meaning: "Để mắt, chú ý tới" },
+  { word: "Meet the deadline", pos: "colloc", meaning: "Kịp thời hạn nộp bài" },
+  { word: "Draw a conclusion", pos: "colloc", meaning: "Rút ra kết luận" },
+  { word: "Make an effort", pos: "colloc", meaning: "Nỗ lực hết mình" },
+  { word: "Meticulous", pos: "adj", meaning: "Tỉ mỉ, cẩn trọng" },
+  { word: "Synchronize", pos: "v", meaning: "Đồng bộ hóa" },
+  { word: "Feasible", pos: "adj", meaning: "Khả thi, thực tế" },
 ];
 
-// Các từ vựng/khái niệm mini trôi nổi tạo chiều sâu không gian
-export const FLOATING_PILLS = [
-  { text: "Bite the bullet · Chấp nhận gian nan", x: 18, y: -48, z: -40, accent: "amber" },
-  { text: "Draw a conclusion · Rút ra kết luận", x: -22, y: -46, z: -30, accent: "emerald" },
-  { text: "Meticulous /məˈtɪkjələs/ · Tỉ mỉ", x: -46, y: -2, z: -50, accent: "purple" },
-  { text: "Gốc 'bene-' (Tốt) → Benefit, Benevolent", x: 44, y: -4, z: -35, accent: "blue" },
-  { text: "Principal (chính) vs Principle (nguyên tắc)", x: 26, y: 44, z: -45, accent: "rose" },
-  { text: "Hit the nail on the head · Nói trúng đích", x: -28, y: 42, z: -35, accent: "amber" },
-];
+/**
+ * Hàm tạo Texture chứa chữ tiếng Anh sắc nét trên Canvas 2D
+ */
+function createTextSprite(item) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 512;
+  canvas.height = 160;
+  const ctx = canvas.getContext("2d");
 
-export function English3DScene({ onSelectKnowledge }) {
+  // Nền bo tròn dạng capsule kính mờ
+  ctx.fillStyle = "rgba(12, 19, 38, 0.82)";
+  ctx.strokeStyle = "rgba(163, 230, 53, 0.4)";
+  ctx.lineWidth = 4;
+
+  const roundRect = (x, y, w, h, r) => {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  };
+
+  roundRect(8, 8, 496, 144, 28);
+
+  // Huy hiệu loại từ
+  ctx.fillStyle = "rgba(56, 189, 248, 0.25)";
+  ctx.strokeStyle = "rgba(56, 189, 248, 0.6)";
+  ctx.lineWidth = 2;
+  roundRect(28, 22, 90, 36, 10);
+
+  ctx.fillStyle = "#7dd3fc";
+  ctx.font = "bold 20px 'Segoe UI', system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(item.pos.toUpperCase(), 73, 47);
+
+  // Từ vựng tiếng Anh
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 44px 'Segoe UI', system-ui, sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText(item.word, 134, 52);
+
+  // Nghĩa tiếng Việt
+  ctx.fillStyle = "#cbd5e1";
+  ctx.font = "24px 'Segoe UI', system-ui, sans-serif";
+  ctx.fillText(item.meaning, 32, 114);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+
+  const spriteMaterial = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    opacity: 0.95,
+  });
+
+  const sprite = new THREE.Sprite(spriteMaterial);
+  sprite.scale.set(9.5, 3.0, 1);
+  return sprite;
+}
+
+/**
+ * Hàm tạo một cụm đám mây 3D bồng bềnh từ nhiều quả cầu mềm mại
+ */
+function createCloudMesh(cloudMaterial) {
+  const group = new THREE.Group();
+  const sphereGeo = new THREE.SphereGeometry(1, 16, 16);
+
+  // Tạo các khối phồng (puffs) của đám mây
+  const puffConfigs = [
+    { x: 0, y: 0, z: 0, s: 2.2 },
+    { x: -1.6, y: -0.3, z: 0.2, s: 1.7 },
+    { x: 1.6, y: -0.2, z: -0.2, s: 1.8 },
+    { x: -0.9, y: 0.8, z: 0.1, s: 1.5 },
+    { x: 0.9, y: 0.7, z: -0.1, s: 1.6 },
+    { x: 0, y: 0.9, z: 0.3, s: 1.4 },
+    { x: -2.6, y: -0.6, z: 0, s: 1.1 },
+    { x: 2.5, y: -0.5, z: 0.1, s: 1.2 },
+  ];
+
+  puffConfigs.forEach((cfg) => {
+    const puff = new THREE.Mesh(sphereGeo, cloudMaterial);
+    puff.position.set(cfg.x, cfg.y, cfg.z);
+    puff.scale.set(cfg.s, cfg.s * 0.82, cfg.s * 0.9);
+    group.add(puff);
+  });
+
+  return group;
+}
+
+export function English3DScene() {
   const mountRef = useRef(null);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
-  const [activeCardId, setActiveCardId] = useState(null);
 
-  // Three.js Scene Setup
   useEffect(() => {
     const container = mountRef.current;
     if (!container) return;
 
-    // Kiểm tra hỗ trợ WebGL
     let renderer;
     try {
       renderer = new THREE.WebGLRenderer({
@@ -100,148 +134,112 @@ export function English3DScene({ onSelectKnowledge }) {
         powerPreference: "high-performance",
       });
     } catch {
-      // Fallback nếu môi trường không có WebGL
       return;
     }
 
     const scene = new THREE.Scene();
+    // Bầu trời chiều sâu và sương mù nhẹ nhàng
+    scene.fog = new THREE.FogExp2(0x080c18, 0.008);
+
     const camera = new THREE.PerspectiveCamera(
-      55,
+      50,
       container.clientWidth / container.clientHeight,
       0.1,
       1000
     );
-    camera.position.z = 75;
+    camera.position.set(0, 0, 60);
 
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     container.appendChild(renderer.domElement);
 
-    // Ánh sáng êm dịu, học thuật sang trọng (Sapphire & Amber/Emerald)
-    const ambientLight = new THREE.AmbientLight(0x2a3556, 1.2);
+    // Hệ thống ánh sáng bầu trời dịu nhẹ
+    const ambientLight = new THREE.AmbientLight(0x232f4e, 2.0);
     scene.add(ambientLight);
 
-    const pointLight1 = new THREE.PointLight(0x38bdf8, 2.5, 120);
-    pointLight1.position.set(-35, 25, 30);
-    scene.add(pointLight1);
+    // Ánh sáng trăng / hoàng hôn chiếu lên viền mây
+    const moonLight = new THREE.DirectionalLight(0xa5f3fc, 1.8);
+    moonLight.position.set(30, 45, 40);
+    scene.add(moonLight);
 
-    const pointLight2 = new THREE.PointLight(0x10b981, 2.2, 120);
-    pointLight2.position.set(40, -25, 25);
-    scene.add(pointLight2);
+    const emeraldLight = new THREE.PointLight(0xa3e635, 2.2, 100);
+    emeraldLight.position.set(-30, -10, 20);
+    scene.add(emeraldLight);
 
-    const pointLight3 = new THREE.PointLight(0xf59e0b, 1.6, 90);
-    pointLight3.position.set(0, 35, 10);
-    scene.add(pointLight3);
+    const sapphireLight = new THREE.PointLight(0x38bdf8, 2.5, 120);
+    sapphireLight.position.set(40, -15, 10);
+    scene.add(sapphireLight);
 
-    // 1. Tạo các khối đa diện hình học pha lê 3D (Crystalline Polyhedra)
-    const polyGroup = new THREE.Group();
-    scene.add(polyGroup);
-
-    const polyGeometries = [
-      new THREE.IcosahedronGeometry(3.5, 0),
-      new THREE.OctahedronGeometry(2.8, 0),
-      new THREE.DodecahedronGeometry(3.2, 0),
-      new THREE.TetrahedronGeometry(3.0, 0),
-      new THREE.TorusGeometry(3.2, 0.7, 16, 40),
-    ];
-
-    const polyMaterials = [
-      new THREE.MeshPhysicalMaterial({
-        color: 0x38bdf8,
-        metalness: 0.15,
-        roughness: 0.25,
-        transmission: 0.65,
-        thickness: 1.2,
-        transparent: true,
-        opacity: 0.75,
-        wireframe: false,
-      }),
-      new THREE.MeshPhysicalMaterial({
-        color: 0x10b981,
-        metalness: 0.2,
-        roughness: 0.3,
-        transmission: 0.6,
-        thickness: 1.0,
-        transparent: true,
-        opacity: 0.7,
-        wireframe: false,
-      }),
-      new THREE.MeshPhysicalMaterial({
-        color: 0xfbbf24,
-        metalness: 0.2,
-        roughness: 0.35,
-        transmission: 0.5,
-        thickness: 0.8,
-        transparent: true,
-        opacity: 0.65,
-        wireframe: false,
-      }),
-      new THREE.MeshStandardMaterial({
-        color: 0x818cf8,
-        roughness: 0.4,
-        wireframe: true,
-      }),
-    ];
-
-    const polyhedra = [];
-    const polyPositions = [
-      { x: -32, y: 18, z: -15, rot: { x: 0.005, y: 0.008 } },
-      { x: 34, y: 22, z: -20, rot: { x: -0.006, y: 0.005 } },
-      { x: -35, y: -20, z: -25, rot: { x: 0.004, y: -0.007 } },
-      { x: 36, y: -18, z: -10, rot: { x: -0.005, y: -0.005 } },
-      { x: 0, y: 32, z: -30, rot: { x: 0.007, y: 0.003 } },
-      { x: 0, y: -34, z: -35, rot: { x: -0.004, y: 0.006 } },
-    ];
-
-    polyPositions.forEach((pos, i) => {
-      const geo = polyGeometries[i % polyGeometries.length];
-      const mat = polyMaterials[i % polyMaterials.length];
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.set(pos.x, pos.y, pos.z);
-      polyGroup.add(mesh);
-      polyhedra.push({ mesh, rot: pos.rot, baseY: pos.y, phase: i * 1.2 });
+    // Chất liệu cho đám mây 3D bồng bềnh
+    const cloudMaterial = new THREE.MeshStandardMaterial({
+      color: 0xe0e7ff,
+      roughness: 0.85,
+      metalness: 0.05,
+      transparent: true,
+      opacity: 0.82,
+      flatShading: false,
     });
 
-    // 2. Mạng lưới hạt bụi vũ trụ/tinh cầu tri thức (Subtle Academic Dust Particles)
-    const particleCount = 280;
-    const particleGeometry = new THREE.BufferGeometry();
-    const positions = new Float32Array(particleCount * 3);
-    const colors = new Float32Array(particleCount * 3);
+    // Tạo các cụm mây mang từ vựng
+    const cloudsGroup = new THREE.Group();
+    scene.add(cloudsGroup);
 
-    const baseColors = [
-      new THREE.Color(0x38bdf8),
-      new THREE.Color(0x34d399),
-      new THREE.Color(0xfcd34d),
-      new THREE.Color(0xa78bfa),
-    ];
+    const clouds = [];
+    const totalClouds = 14;
 
-    for (let i = 0; i < particleCount; i++) {
-      positions[i * 3] = (Math.random() - 0.5) * 160;
-      positions[i * 3 + 1] = (Math.random() - 0.5) * 110;
-      positions[i * 3 + 2] = (Math.random() - 0.5) * 90;
+    for (let i = 0; i < totalClouds; i++) {
+      const cloudItem = new THREE.Group();
+      const wordData = CLOUD_WORDS[i % CLOUD_WORDS.length];
 
-      const col = baseColors[Math.floor(Math.random() * baseColors.length)];
-      colors[i * 3] = col.r;
-      colors[i * 3 + 1] = col.g;
-      colors[i * 3 + 2] = col.b;
+      // Thêm hình thể đám mây 3D
+      const cloudMesh = createCloudMesh(cloudMaterial);
+      cloudItem.add(cloudMesh);
+
+      // Thêm từ vựng tiếng Anh trên đỉnh đám mây
+      const textSprite = createTextSprite(wordData);
+      textSprite.position.set(0, 2.6, 0.4);
+      cloudItem.add(textSprite);
+
+      // Định vị phân bổ trong không gian 3D
+      const x = ((i / totalClouds) * 120) - 60 + (Math.random() * 8 - 4);
+      const y = ((Math.random() - 0.5) * 44) + (i % 2 === 0 ? 4 : -4);
+      const z = ((Math.random() - 0.5) * 35) - 5;
+      const scale = 1.0 + Math.random() * 0.6;
+      const speed = 0.035 + Math.random() * 0.025;
+
+      cloudItem.position.set(x, y, z);
+      cloudItem.scale.set(scale, scale, scale);
+
+      cloudsGroup.add(cloudItem);
+      clouds.push({
+        group: cloudItem,
+        speed,
+        baseY: y,
+        phase: Math.random() * Math.PI * 2,
+      });
     }
 
-    particleGeometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-    particleGeometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-
-    const particleMaterial = new THREE.PointsMaterial({
-      size: 1.2,
-      vertexColors: true,
+    // Tinh cầu / bụi sao trôi trong không gian bầu trời
+    const starCount = 180;
+    const starGeometry = new THREE.BufferGeometry();
+    const starPositions = new Float32Array(starCount * 3);
+    for (let i = 0; i < starCount * 3; i += 3) {
+      starPositions[i] = (Math.random() - 0.5) * 160;
+      starPositions[i + 1] = (Math.random() - 0.5) * 100;
+      starPositions[i + 2] = (Math.random() - 0.5) * 80;
+    }
+    starGeometry.setAttribute("position", new THREE.BufferAttribute(starPositions, 3));
+    const starMaterial = new THREE.PointsMaterial({
+      size: 1.1,
+      color: 0x93c5fd,
       transparent: true,
-      opacity: 0.65,
-      blending: THREE.AdditiveBlending,
+      opacity: 0.55,
     });
+    const stars = new THREE.Points(starGeometry, starMaterial);
+    scene.add(stars);
 
-    const particles = new THREE.Points(particleGeometry, particleMaterial);
-    scene.add(particles);
-
-    // Xử lý chuyển động chuột (Parallax)
+    // Parallax theo chuột
     let targetCameraX = 0;
     let targetCameraY = 0;
 
@@ -249,14 +247,13 @@ export function English3DScene({ onSelectKnowledge }) {
       const { innerWidth, innerHeight } = window;
       const nx = (e.clientX / innerWidth) * 2 - 1;
       const ny = -(e.clientY / innerHeight) * 2 + 1;
-      targetCameraX = nx * 10;
-      targetCameraY = ny * 7;
+      targetCameraX = nx * 8;
+      targetCameraY = ny * 5;
       setMousePos({ x: nx, y: ny });
     };
 
     window.addEventListener("mousemove", handleMouseMove, { passive: true });
 
-    // Xử lý thay đổi kích thước cửa sổ
     const handleResize = () => {
       if (!container) return;
       camera.aspect = container.clientWidth / container.clientHeight;
@@ -266,7 +263,7 @@ export function English3DScene({ onSelectKnowledge }) {
 
     window.addEventListener("resize", handleResize);
 
-    // Vòng lặp Render (Animation Loop)
+    // Animation loop
     let animationFrameId;
     let clock = new THREE.Clock();
 
@@ -274,21 +271,24 @@ export function English3DScene({ onSelectKnowledge }) {
       animationFrameId = requestAnimationFrame(animate);
       const elapsedTime = clock.getElapsedTime();
 
-      // Camera lerp theo chuột
+      // Camera di chuyển êm dịu theo chuột
       camera.position.x += (targetCameraX - camera.position.x) * 0.04;
       camera.position.y += (targetCameraY - camera.position.y) * 0.04;
       camera.lookAt(0, 0, 0);
 
-      // Xoay các khối đa diện pha lê
-      polyhedra.forEach((item) => {
-        item.mesh.rotation.x += item.rot.x;
-        item.mesh.rotation.y += item.rot.y;
-        item.mesh.position.y = item.baseY + Math.sin(elapsedTime * 0.8 + item.phase) * 1.8;
+      // Các đám mây di chuyển ngang qua bầu trời kèm từ vựng trên mây
+      clouds.forEach((c) => {
+        c.group.position.x += c.speed;
+        c.group.position.y = c.baseY + Math.sin(elapsedTime * 0.7 + c.phase) * 1.2;
+
+        // Nếu mây bay quá biên phải màn hình thì xuất hiện lại ở bên trái
+        if (c.group.position.x > 68) {
+          c.group.position.x = -68;
+        }
       });
 
-      // Xoay nhẹ mây hạt tri thức
-      particles.rotation.y = elapsedTime * 0.02;
-      particles.rotation.x = Math.sin(elapsedTime * 0.015) * 0.05;
+      // Bụi sao xoay nhẹ nhàng
+      stars.rotation.y = elapsedTime * 0.01;
 
       renderer.render(scene, camera);
     };
@@ -304,100 +304,23 @@ export function English3DScene({ onSelectKnowledge }) {
         container.removeChild(renderer.domElement);
       }
 
-      // Giải phóng bộ nhớ WebGL
-      polyGeometries.forEach((g) => g.dispose());
-      polyMaterials.forEach((m) => m.dispose());
-      particleGeometry.dispose();
-      particleMaterial.dispose();
+      cloudMaterial.dispose();
+      starGeometry.dispose();
+      starMaterial.dispose();
       renderer.dispose();
     };
   }, []);
 
   return (
     <div className="english-3d-wrapper" aria-hidden="false">
-      {/* Three.js WebGL Canvas Background */}
+      {/* Three.js Canvas Đám mây 3D */}
       <div ref={mountRef} className="three-canvas-container" />
 
-      {/* Ánh sáng hào quang nền dịu mắt */}
+      {/* Ánh sáng mờ ảo hoàng hôn/đêm học thuật */}
       <div className="ambient-backdrop-glows">
         <div className="glow-sphere glow-emerald" />
         <div className="glow-sphere glow-sapphire" />
         <div className="glow-sphere glow-amber" />
-      </div>
-
-      {/* Tầng Thẻ kiến thức Tiếng Anh 3D tương tác */}
-      <div
-        className="english-cards-3d-space"
-        style={{
-          perspective: "1200px",
-          transform: `rotateX(${-mousePos.y * 3.5}deg) rotateY(${mousePos.x * 4.5}deg)`,
-        }}
-      >
-        {ENGLISH_KNOWLEDGE_CARDS.map((card) => {
-          const isActive = activeCardId === card.id;
-          const parallaxX = mousePos.x * card.depth * 24;
-          const parallaxY = -mousePos.y * card.depth * 18;
-
-          return (
-            <div
-              key={card.id}
-              className={`knowledge-card-3d accent-${card.accent} ${isActive ? "active" : ""}`}
-              style={{
-                transform: `translate3d(calc(${card.defaultPos.x}vw + ${parallaxX}px), calc(${card.defaultPos.y}vh + ${parallaxY}px), ${card.defaultPos.z}px)`,
-              }}
-              onMouseEnter={() => setActiveCardId(card.id)}
-              onMouseLeave={() => setActiveCardId(null)}
-              onClick={() => onSelectKnowledge?.(card)}
-              role="region"
-              aria-label={card.term}
-            >
-              <div className="card-glass-body">
-                <div className="card-top-row">
-                  <span className="card-category-badge">
-                    <BookOpen size={13} />
-                    <span>{card.category}</span>
-                  </span>
-                  <span className="card-tag-badge">{card.tag}</span>
-                </div>
-
-                <div className="card-term-header">
-                  <h3>{card.term}</h3>
-                  {card.phonetic && <span className="card-phonetic">{card.phonetic}</span>}
-                </div>
-
-                <p className="card-meaning">{card.meaning}</p>
-
-                <div className="card-example-box">
-                  <span className="example-label">Ví dụ thực tế:</span>
-                  <p>"{card.example}"</p>
-                </div>
-
-                <div className="card-footer-action">
-                  <span>Kiến thức thực hành</span>
-                  <ArrowUpRight size={14} />
-                </div>
-              </div>
-            </div>
-          );
-        })}
-
-        {/* Các viên thuốc tri thức mini (Floating Knowledge Pills) */}
-        {FLOATING_PILLS.map((pill, idx) => {
-          const pillX = mousePos.x * 12;
-          const pillY = -mousePos.y * 10;
-          return (
-            <div
-              key={idx}
-              className={`floating-pill accent-${pill.accent}`}
-              style={{
-                transform: `translate3d(calc(${pill.x}vw + ${pillX}px), calc(${pill.y}vh + ${pillY}px), ${pill.z}px)`,
-              }}
-            >
-              <Lightbulb size={12} />
-              <span>{pill.text}</span>
-            </div>
-          );
-        })}
       </div>
     </div>
   );

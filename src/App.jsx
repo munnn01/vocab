@@ -1030,7 +1030,6 @@ function LoginView({ onLogin }) {
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [selectedTip, setSelectedTip] = useState(null);
 
   async function submit(event) {
     event.preventDefault();
@@ -1046,43 +1045,17 @@ function LoginView({ onLogin }) {
   }
 
   return (
-    <div className="auth-screen">
-      <English3DScene onSelectKnowledge={(card) => setSelectedTip(card)} />
+    <div className="auth-screen centered-auth">
+      <English3DScene />
 
-      <div className="login-layout">
-        <section className="login-intro">
-          <div className="login-badge-pill">
-            <Sparkles size={14} />
-            <span>Nền tảng học từ vựng 3D tương tác</span>
-          </div>
-          <span className="brand-mark"><Layers3 size={24} /></span>
-          <div className="eyebrow">Từ Vựng Mỗi Ngày</div>
-          <h1>Một lớp học.<br /><span>Hai dạng bài chuẩn bản xứ.</span></h1>
-          <p>Không gian học từ vựng chuyên sâu với mô hình 3D trực quan. Giảng viên nạp PDF để tạo bài; sinh viên đăng nhập làm bài và bứt phá phản xạ tiếng Anh.</p>
-          
-          <div className="login-features">
-            <span><Check size={16} /> Điền từ chuẩn ngữ cảnh</span>
-            <span><Check size={16} /> Trắc nghiệm cùng loại từ</span>
-            <span><Check size={16} /> Xuất kết quả vào file Excel gốc</span>
-          </div>
-
-          {selectedTip && (
-            <div className="login-quick-tip-banner">
-              <div className="tip-head">
-                <Sparkles size={14} />
-                <span>Kiến thức vừa chọn: <b>{selectedTip.term}</b></span>
-              </div>
-              <p>{selectedTip.meaning}</p>
-              <small>Ví dụ: "{selectedTip.example}"</small>
+      <div className="login-centered-container">
+        <form className="login-card centered-card" onSubmit={submit}>
+          <div className="login-card-brand">
+            <span className="brand-mark"><Layers3 size={24} /></span>
+            <div className="brand-title">
+              <h1>Từ Vựng <b>Mỗi Ngày</b></h1>
+              <span>Cổng học tập & quản lý từ vựng</span>
             </div>
-          )}
-        </section>
-
-        <form className="login-card" onSubmit={submit}>
-          <div className="login-card-header">
-            <div className="eyebrow">Cổng đăng nhập</div>
-            <h2>Chào mừng bạn trở lại</h2>
-            <p className="login-card-desc">Chọn đúng vai trò của bạn để truy cập không gian học tập</p>
           </div>
 
           <div className="role-switch" role="tablist" aria-label="Vai trò đăng nhập">
@@ -1162,8 +1135,8 @@ function LoginView({ onLogin }) {
 
           <p className="login-note">
             {role === "student"
-              ? "Sinh viên dùng đúng tên đăng nhập và mật khẩu trong file Excel được giảng viên cấp."
-              : "Giảng viên quản trị có thể tạo bộ từ mới và theo dõi kết quả làm bài của từng lớp."}
+              ? "Sinh viên dùng đúng tên đăng nhập và mật khẩu trong file Excel được cấp."
+              : "Giảng viên quản trị có thể tạo bài tập và theo dõi điểm từng lớp."}
           </p>
         </form>
       </div>
