@@ -2,51 +2,58 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 
 /**
- * Hàm tạo một cụm đám mây 3D bồng bềnh hữu cơ (Organic Cumulus Cloud Cluster)
- * Lấy cảm hứng từ phong cách 3D Sky của các Three.js portfolio cao cấp
+ * Tạo texture đám mây siêu thực bằng Canvas 2D
+ * Sử dụng nhiều tầng khói xốp (turbulent smoke puffs) với độ mờ viền suy giảm hàm mũ
+ * để khi xếp chồng trong không gian 3D sẽ tạo thành khối mây thực tế 100% như nhìn từ máy bay
  */
-function createVolumetricCloud(material, scaleMultiplier = 1) {
-  const group = new THREE.Group();
-  const sphereGeo = new THREE.SphereGeometry(1, 20, 20);
+function createRealisticCloudTexture() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext("2d");
 
-  // Cấu trúc các khối phồng tạo dáng mây tự nhiên (đáy phẳng, đỉnh phồng cao)
-  const puffs = [
-    // Lõi trung tâm
-    { x: 0, y: 0, z: 0, sx: 2.8, sy: 1.9, sz: 2.4 },
-    { x: -1.8, y: -0.2, z: 0.3, sx: 2.2, sy: 1.6, sz: 2.0 },
-    { x: 1.9, y: -0.2, z: -0.2, sx: 2.3, sy: 1.6, sz: 2.1 },
-    
-    // Đỉnh mây bồng bềnh
-    { x: -0.8, y: 1.1, z: 0.1, sx: 2.1, sy: 1.8, sz: 1.9 },
-    { x: 0.9, y: 1.2, z: -0.1, sx: 2.2, sy: 1.9, sz: 2.0 },
-    { x: 0.1, y: 1.5, z: 0.2, sx: 1.8, sy: 1.6, sz: 1.7 },
-    
-    // Hai cánh mây mở rộng
-    { x: -3.2, y: -0.5, z: 0.2, sx: 1.7, sy: 1.2, sz: 1.5 },
-    { x: 3.3, y: -0.4, z: -0.1, sx: 1.8, sy: 1.3, sz: 1.6 },
-    { x: -2.3, y: 0.6, z: 0.4, sx: 1.6, sy: 1.4, sz: 1.5 },
-    { x: 2.4, y: 0.7, z: -0.3, sx: 1.7, sy: 1.4, sz: 1.6 },
-    
-    // Lớp đệm phía trước & sau tạo chiều sâu 3D tròn đầy
-    { x: -0.4, y: -0.3, z: 1.2, sx: 1.9, sy: 1.4, sz: 1.6 },
-    { x: 0.6, y: -0.2, z: -1.2, sx: 1.8, sy: 1.3, sz: 1.5 },
-    { x: 1.2, y: 0.3, z: 1.0, sx: 1.5, sy: 1.2, sz: 1.4 },
-  ];
+  ctx.clearRect(0, 0, 512, 512);
 
-  puffs.forEach((p) => {
-    const puff = new THREE.Mesh(sphereGeo, material);
-    puff.position.set(p.x * scaleMultiplier, p.y * scaleMultiplier, p.z * scaleMultiplier);
-    puff.scale.set(
-      p.sx * scaleMultiplier,
-      p.sy * scaleMultiplier,
-      p.sz * scaleMultiplier
-    );
-    puff.castShadow = true;
-    puff.receiveShadow = true;
-    group.add(puff);
-  });
+  // Tạo các cụm đốm khói ngẫu nhiên tích tụ thành một vệt mây tơi xốp
+  const centerX = 256;
+  const centerY = 256;
 
-  return group;
+  // Lớp nền mờ tỏa rộng (soft ambient wisp)
+  const baseGrad = ctx.createRadialGradient(centerX, centerY, 10, centerX, centerY, 240);
+  baseGrad.addColorStop(0, "rgba(255, 255, 255, 0.45)");
+  baseGrad.addColorStop(0.4, "rgba(240, 246, 255, 0.22)");
+  baseGrad.addColorStop(0.7, "rgba(220, 235, 255, 0.08)");
+  baseGrad.addColorStop(1, "rgba(200, 220, 255, 0)");
+  ctx.fillStyle = baseGrad;
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, 240, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Tạo 65 đốm hạt sương mây ngẫu nhiên đan xen tạo vân mây tự nhiên
+  const puffCount = 65;
+  for (let i = 0; i < puffCount; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = Math.pow(Math.random(), 1.4) * 160;
+    const px = centerX + Math.cos(angle) * dist;
+    const py = centerY + Math.sin(angle) * dist * 0.72; // Hơi dẹt ngang theo tự nhiên
+    const radius = 55 + Math.random() * 85;
+
+    const puffGrad = ctx.createRadialGradient(px, py, 0, px, py, radius);
+    const alpha = 0.12 + Math.random() * 0.18;
+    puffGrad.addColorStop(0, `rgba(255, 255, 255, ${alpha})`);
+    puffGrad.addColorStop(0.45, `rgba(245, 250, 255, ${alpha * 0.5})`);
+    puffGrad.addColorStop(0.8, `rgba(230, 242, 255, ${alpha * 0.15})`);
+    puffGrad.addColorStop(1, "rgba(215, 235, 255, 0)");
+
+    ctx.fillStyle = puffGrad;
+    ctx.beginPath();
+    ctx.arc(px, py, radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  return texture;
 }
 
 export function English3DScene() {
@@ -56,7 +63,6 @@ export function English3DScene() {
     const container = mountRef.current;
     if (!container) return;
 
-    // Khởi tạo Three.js WebGL Renderer
     let renderer;
     try {
       renderer = new THREE.WebGLRenderer({
@@ -70,148 +76,137 @@ export function English3DScene() {
 
     const scene = new THREE.Scene();
 
-    // Sương mù khí quyển êm dịu (Atmospheric Fog)
-    scene.fog = new THREE.FogExp2(0x0a1024, 0.012);
+    // Sương mù đường chân trời thực tế (Realistic Horizon Fog)
+    // Tông màu trời hoàng hôn / chạng vạng thực tế
+    const skyColor = new THREE.Color(0x0e172e);
+    scene.fog = new THREE.Fog(skyColor, 25, 140);
 
     const camera = new THREE.PerspectiveCamera(
-      52,
+      50,
       container.clientWidth / container.clientHeight,
       0.1,
       1000
     );
-    camera.position.set(0, 2, 55);
+    camera.position.set(0, 1.5, 50);
 
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.15;
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMappingExposure = 1.25;
     container.appendChild(renderer.domElement);
 
     // ==========================================
-    // ÁNH SÁNG BẦU TRỜI & MẶT TRỜI / ÁNH TRĂNG
+    // ÁNH SÁNG THỰC TẾ CHIẾU MÂY (Realistic Lighting)
     // ==========================================
-    // Ánh sáng môi trường hai màu (Hemisphere Light) tạo gradient sáng đỉnh - tối đáy cho mây
-    const hemiLight = new THREE.HemisphereLight(0xcde9ff, 0x141e38, 2.2);
-    scene.add(hemiLight);
+    // Ánh sáng bầu trời tổng thể (Sky Ambient)
+    const ambientLight = new THREE.AmbientLight(0x33476b, 1.8);
+    scene.add(ambientLight);
 
-    // Nguồn sáng định hướng (Sun/Moon Directional Light) tạo vệt bóng & viền sáng xốp
-    const sunLight = new THREE.DirectionalLight(0xffffff, 2.4);
-    sunLight.position.set(45, 55, 35);
-    sunLight.castShadow = true;
+    // Ánh sáng mặt trời chiếu từ trên cao xuống tạo đỉnh mây rực rỡ
+    const sunLight = new THREE.DirectionalLight(0xfff5e6, 3.2);
+    sunLight.position.set(35, 60, 45);
     scene.add(sunLight);
 
-    // Ánh sáng viền bầu trời màu Cyan & Vàng hoàng hôn mềm mại
-    const rimLightBlue = new THREE.PointLight(0x38bdf8, 3.2, 140);
-    rimLightBlue.position.set(-45, 25, 20);
-    scene.add(rimLightBlue);
+    // Ánh phản xạ xanh lam từ bầu trời dưới đáy mây (Sky bounce)
+    const skyBounceLight = new THREE.DirectionalLight(0x4770a8, 1.4);
+    skyBounceLight.position.set(-20, -30, -20);
+    scene.add(skyBounceLight);
 
-    const rimLightGold = new THREE.PointLight(0xfcd34d, 2.0, 120);
-    rimLightGold.position.set(50, -20, 15);
-    scene.add(rimLightGold);
+    // Ánh nắng vàng nhẹ bên góc trời hoàng hôn
+    const sunsetLight = new THREE.PointLight(0xf59e0b, 2.2, 160);
+    sunsetLight.position.set(-45, 15, -10);
+    scene.add(sunsetLight);
 
     // ==========================================
-    // VẬT LIỆU MÂY 3D (Fluffy Cloud Materials)
+    // KHỞI TẠO CÁC TẦNG MÂY THỰC TẾ (Volumetric Cloud Banks)
     // ==========================================
-    // Lớp mây chính gần camera
-    const mainCloudMaterial = new THREE.MeshStandardMaterial({
-      color: 0xf3f7fc,
-      roughness: 0.92,
-      metalness: 0.02,
-      flatShading: false,
+    const cloudTexture = createRealisticCloudTexture();
+
+    // Vật liệu mây mềm, hòa trộn khói tự nhiên
+    const cloudMaterial = new THREE.MeshLambertMaterial({
+      map: cloudTexture,
       transparent: true,
-      opacity: 0.94,
+      opacity: 0.82,
+      depthWrite: false,
+      depthTest: true,
+      blending: THREE.NormalBlending,
+      side: THREE.DoubleSide,
     });
 
-    // Lớp mây xa (nền sau)
-    const distantCloudMaterial = new THREE.MeshStandardMaterial({
-      color: 0xd6e4f7,
-      roughness: 0.95,
-      metalness: 0.01,
-      flatShading: false,
-      transparent: true,
-      opacity: 0.76,
-    });
+    // Tạo hình học phẳng cho từng phiến mây
+    const cloudGeo = new THREE.PlaneGeometry(28, 28);
 
-    // ==========================================
-    // TẠO CÁC CỤM ĐÁM MÂY 3D TRÔI TRONG BẦU TRỜI
-    // ==========================================
-    const cloudsGroup = new THREE.Group();
-    scene.add(cloudsGroup);
+    // Nhóm chứa toàn bộ các ngân mây
+    const cloudsContainer = new THREE.Group();
+    scene.add(cloudsContainer);
 
-    const clouds = [];
+    const cloudClusters = [];
+    const totalClusters = 18;
 
-    // 1. Tầng mây trung tâm & tiền cảnh (Foreground & Midground Clouds)
-    const mainCloudCount = 12;
-    for (let i = 0; i < mainCloudCount; i++) {
-      const scaleMult = 0.85 + Math.random() * 0.7;
-      const cloud = createVolumetricCloud(mainCloudMaterial, scaleMult);
+    for (let c = 0; c < totalClusters; c++) {
+      const clusterGroup = new THREE.Group();
 
-      // Phân bổ rộng khắp không gian để không che khuất tâm giữa
-      const isLeftSide = i % 2 === 0;
-      const x = isLeftSide
-        ? -20 - Math.random() * 38
-        : 20 + Math.random() * 38;
-      const y = (Math.random() - 0.5) * 36 + (i % 3 === 0 ? 5 : -4);
-      const z = (Math.random() - 0.5) * 28 - 2;
+      // Mỗi cụm đám mây được tạo bởi 16-24 phiến mây xoay lệch và lồng vào nhau
+      // tạo thành một khối mây có chiều sâu 3D dày dặn, xốp mịn, viền tơi như đời thực
+      const puffsInCluster = 18 + Math.floor(Math.random() * 8);
 
-      cloud.position.set(x, y, z);
-      // Xoay nhẹ tự nhiên
-      cloud.rotation.y = Math.random() * Math.PI;
+      for (let p = 0; p < puffsInCluster; p++) {
+        const mesh = new THREE.Mesh(cloudGeo, cloudMaterial);
 
-      cloudsGroup.add(cloud);
+        // Phân bổ các phiến mây thành một búp mây hình elip tự nhiên
+        const angle = Math.random() * Math.PI * 2;
+        const radius = Math.pow(Math.random(), 1.2) * 12;
+        const px = Math.cos(angle) * radius * 1.5; // Dài theo chiều ngang
+        const py = (Math.random() - 0.45) * 6; // Đáy mây phẳng hơn đỉnh
+        const pz = Math.sin(angle) * radius * 0.9;
 
-      clouds.push({
-        mesh: cloud,
-        speed: 0.018 + Math.random() * 0.018,
+        mesh.position.set(px, py, pz);
+        mesh.rotation.z = Math.random() * Math.PI * 2;
+        const pScale = 0.85 + Math.random() * 0.75;
+        mesh.scale.set(pScale, pScale, 1);
+
+        clusterGroup.add(mesh);
+      }
+
+      // Phân bổ các cụm mây theo độ sâu và không gian bầu trời
+      // Giữ khoảng trống ở trung tâm để cổng đăng nhập nổi bật
+      const isLeft = c % 2 === 0;
+      const x = isLeft
+        ? -22 - Math.random() * 45
+        : 22 + Math.random() * 45;
+      const y = (Math.random() - 0.5) * 38 + (c % 3 === 0 ? 6 : -5);
+      const z = (Math.random() - 0.5) * 50 - 5;
+      const clusterScale = 0.9 + Math.random() * 0.8;
+      const speed = 0.014 + Math.random() * 0.016;
+
+      clusterGroup.position.set(x, y, z);
+      clusterGroup.scale.set(clusterScale, clusterScale * 0.85, clusterScale);
+
+      cloudsContainer.add(clusterGroup);
+
+      cloudClusters.push({
+        group: clusterGroup,
+        speed,
         baseY: y,
         bobPhase: Math.random() * Math.PI * 2,
-        bobSpeed: 0.4 + Math.random() * 0.4,
-        driftLimitX: 68,
+        bobSpeed: 0.35 + Math.random() * 0.35,
+        driftLimitX: 72,
       });
     }
 
-    // 2. Tầng mây xa xăm (Distant Background Clouds)
-    const distantCloudCount = 9;
-    for (let i = 0; i < distantCloudCount; i++) {
-      const scaleMult = 1.4 + Math.random() * 0.9;
-      const cloud = createVolumetricCloud(distantCloudMaterial, scaleMult);
-
-      const x = (Math.random() - 0.5) * 140;
-      const y = (Math.random() - 0.5) * 48 + 8;
-      const z = -28 - Math.random() * 32;
-
-      cloud.position.set(x, y, z);
-      cloud.rotation.y = Math.random() * Math.PI;
-
-      cloudsGroup.add(cloud);
-
-      clouds.push({
-        mesh: cloud,
-        speed: 0.008 + Math.random() * 0.01,
-        baseY: y,
-        bobPhase: Math.random() * Math.PI * 2,
-        bobSpeed: 0.25 + Math.random() * 0.3,
-        driftLimitX: 85,
-      });
-    }
-
-    // ==========================================
-    // BỤI SAO & HẠT BẦU TRỜI LẤP LÁNH (Sky Dust)
-    // ==========================================
-    const starCount = 240;
+    // Tinh cầu / ánh sao li ti trên bầu trời đêm thực tế
+    const starCount = 300;
     const starGeo = new THREE.BufferGeometry();
-    const starPositions = new Float32Array(starCount * 3);
+    const starPos = new Float32Array(starCount * 3);
     for (let i = 0; i < starCount * 3; i += 3) {
-      starPositions[i] = (Math.random() - 0.5) * 180;
-      starPositions[i + 1] = (Math.random() - 0.5) * 120 + 10;
-      starPositions[i + 2] = (Math.random() - 0.5) * 90 - 15;
+      starPos[i] = (Math.random() - 0.5) * 200;
+      starPos[i + 1] = (Math.random() - 0.5) * 120 + 20;
+      starPos[i + 2] = (Math.random() - 0.5) * 100 - 25;
     }
-    starGeo.setAttribute("position", new THREE.BufferAttribute(starPositions, 3));
+    starGeo.setAttribute("position", new THREE.BufferAttribute(starPos, 3));
     const starMat = new THREE.PointsMaterial({
-      size: 1.2,
-      color: 0xbfe3ff,
+      size: 1.0,
+      color: 0xdbeafe,
       transparent: true,
       opacity: 0.65,
     });
@@ -219,17 +214,17 @@ export function English3DScene() {
     scene.add(stars);
 
     // ==========================================
-    // TƯƠNG TÁC CHUỘT (Mouse Parallax mượt mà)
+    // TƯƠNG TÁC CHUỘT (Mouse Parallax)
     // ==========================================
     let targetCameraX = 0;
-    let targetCameraY = 2;
+    let targetCameraY = 1.5;
 
     const handleMouseMove = (e) => {
       const { innerWidth, innerHeight } = window;
       const nx = (e.clientX / innerWidth) * 2 - 1;
       const ny = -(e.clientY / innerHeight) * 2 + 1;
-      targetCameraX = nx * 9;
-      targetCameraY = 2 + ny * 6;
+      targetCameraX = nx * 8.5;
+      targetCameraY = 1.5 + ny * 5.5;
     };
 
     window.addEventListener("mousemove", handleMouseMove, { passive: true });
@@ -253,24 +248,30 @@ export function English3DScene() {
       animationFrameId = requestAnimationFrame(animate);
       const elapsedTime = clock.getElapsedTime();
 
-      // Camera di chuyển mềm mượt (Lerp) theo chuột
-      camera.position.x += (targetCameraX - camera.position.x) * 0.045;
-      camera.position.y += (targetCameraY - camera.position.y) * 0.045;
-      camera.lookAt(0, 2, 0);
+      // Camera di chuyển êm dịu theo chuột
+      camera.position.x += (targetCameraX - camera.position.x) * 0.04;
+      camera.position.y += (targetCameraY - camera.position.y) * 0.04;
+      camera.lookAt(0, 1.5, 0);
 
-      // Mây trôi dạt êm ả qua bầu trời và bập bềnh nhẹ nhàng
-      clouds.forEach((c) => {
-        c.mesh.position.x += c.speed;
-        c.mesh.position.y = c.baseY + Math.sin(elapsedTime * c.bobSpeed + c.bobPhase) * 0.85;
+      // Mây trôi dạt liên tục ngang bầu trời
+      cloudClusters.forEach((c) => {
+        c.group.position.x += c.speed;
+        c.group.position.y = c.baseY + Math.sin(elapsedTime * c.bobSpeed + c.bobPhase) * 0.75;
 
-        // Vòng lặp tuần hoàn mây khi trôi khỏi màn hình
-        if (c.mesh.position.x > c.driftLimitX) {
-          c.mesh.position.x = -c.driftLimitX;
+        // Vòng lặp tuần hoàn khi mây bay khỏi màn hình
+        if (c.group.position.x > c.driftLimitX) {
+          c.group.position.x = -c.driftLimitX;
         }
+
+        // Đảm bảo từng phiến mây luôn hướng về phía camera (Billboarding)
+        // để tạo độ xốp tròn đầy 100% tự nhiên không bị méo góc
+        c.group.children.forEach((mesh) => {
+          mesh.quaternion.copy(camera.quaternion);
+        });
       });
 
-      // Bầu trời sao xoay cực chậm tạo độ sâu vô tận
-      stars.rotation.y = elapsedTime * 0.008;
+      // Bầu trời sao xoay nhè nhẹ
+      stars.rotation.y = elapsedTime * 0.005;
 
       renderer.render(scene, camera);
     };
@@ -286,8 +287,9 @@ export function English3DScene() {
         container.removeChild(renderer.domElement);
       }
 
-      mainCloudMaterial.dispose();
-      distantCloudMaterial.dispose();
+      cloudTexture.dispose();
+      cloudMaterial.dispose();
+      cloudGeo.dispose();
       starGeo.dispose();
       starMat.dispose();
       renderer.dispose();
@@ -296,12 +298,11 @@ export function English3DScene() {
 
   return (
     <div className="english-3d-wrapper" aria-hidden="true">
-      {/* Three.js Canvas Đám mây 3D thuần túy */}
+      {/* Three.js Canvas Đám mây 3D siêu thực */}
       <div ref={mountRef} className="three-canvas-container" />
 
-      {/* Ánh sáng mờ ảo hoàng hôn/bầu trời xanh thẳm */}
+      {/* Ánh sáng khí quyển dịu mắt */}
       <div className="ambient-backdrop-glows">
-        <div className="glow-sphere glow-emerald" />
         <div className="glow-sphere glow-sapphire" />
         <div className="glow-sphere glow-amber" />
       </div>
