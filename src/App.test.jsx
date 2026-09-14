@@ -60,3 +60,22 @@ test("isDeckLockedForStudent correctly detects locked decks", () => {
   expect(isDeckLockedForStudent(restrictedDeck, instructor)).toBe(false); // instructor never locked
 });
 
+test("isDeckLockedForStudent handles lockAt deadlines", () => {
+  const futureDate = new Date(Date.now() + 1000 * 60 * 60 * 24).toISOString();
+  const pastDate = new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString();
+
+  const student = { role: "student", className: "12A1" };
+  const instructor = { role: "instructor" };
+
+  const futureDeck = { title: "Future Deck", unlockedClasses: null, lockAt: futureDate };
+  const expiredDeck = { title: "Expired Deck", unlockedClasses: null, lockAt: pastDate };
+
+  // Future deck is not locked
+  expect(isDeckLockedForStudent(futureDeck, student)).toBe(false);
+  expect(isDeckLockedForStudent(futureDeck, instructor)).toBe(false);
+
+  // Expired deck is locked for student, but open for instructor
+  expect(isDeckLockedForStudent(expiredDeck, student)).toBe(true);
+  expect(isDeckLockedForStudent(expiredDeck, instructor)).toBe(false);
+});
+

@@ -291,6 +291,7 @@ export async function loadLibrary() {
       wordCount: deck.word_count,
       practiceMode: deck.practice_mode || "typing",
       unlockedClasses: Array.isArray(deck.unlocked_classes) ? deck.unlocked_classes : null,
+      lockAt: deck.lock_at || (typeof localStorage !== "undefined" ? localStorage.getItem(`vocab_deck_lock_${deck.id}`) : null) || null,
       createdAt: deck.created_at,
       words: [...(deck.words || [])]
         .sort((a, b) => a.position - b.position)
@@ -384,6 +385,24 @@ export async function updateDeckClassAccess(deckId, unlockedClasses) {
       throw new Error("Cơ sở dữ liệu Supabase chưa có cột unlocked_classes. Vui lòng chạy file migration trong SQL Editor.");
     }
     throw error;
+  }
+}
+
+export async function updateDeckLockAt(deckId, lockAt) {
+  if (typeof localStorage !== "undefined") {
+    if (lockAt) localStorage.setItem(`vocab_deck_lock_${deckId}`, lockAt);
+    else localStorage.removeItem(`vocab_deck_lock_${deckId}`);
+  }
+  if (!supabase) return;
+  try {
+    await requireUser();
+    const value = lockAt ? new Date(lockAt).toISOString() : null;
+    await supabase
+      .from("decks")
+      .update({ lock_at: value })
+      .eq("id", deckId);
+  } catch (err) {
+    console.warn("Could not sync lock_at with Supabase:", err);
   }
 }
 

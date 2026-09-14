@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowLeft, BookOpen, BrainCircuit, Check, ChevronRight, CircleAlert, FileText,
+  ArrowLeft, BookOpen, BrainCircuit, Check, ChevronRight, CircleAlert, Clock, FileText,
   Download, Eye, EyeOff, FileSpreadsheet, FileUp, Flame, GraduationCap, Keyboard, KeyRound, Layers3,
   LoaderCircle, Lock, LogOut, Maximize2, Minimize2, Plus,
   RotateCcw, ShieldCheck, Sparkles, Trash2, Trophy, Unlock, UserPlus, Users, X,
@@ -10,7 +10,7 @@ import {
   createDeck, createStudentAccounts, deleteDeck, deleteRoster, deleteOrphanedRosters, getCurrentAccount, isSupabaseConfigured,
   loadLibrary, loadRosterWorkbook, loadRosters, loadStudentResults, loadStudents,
   resetStudentPasswords, saveStudySession, signIn, signOut,
-  updateDeckPracticeMode, updateDeckClassAccess,
+  updateDeckPracticeMode, updateDeckClassAccess, updateDeckLockAt,
 } from "./lib/supabase";
 import {
   createDemoStudentAccounts, downloadRosterCredentialsXlsx, downloadRosterResultsXlsx,
@@ -24,15 +24,16 @@ const DEMO_DECK = {
   title: "Bộ từ học thử",
   sourceFileName: "Mẫu new(adj): mới",
   wordCount: DEMO_WORDS.length,
-  words: DEMO_WORDS,
   practiceMode: "typing",
   unlockedClasses: null,
+  lockAt: null,
   isDemo: true,
+  words: DEMO_WORDS,
 };
 
 const PRACTICE_MODES = [
-  { id: "typing", title: "Điền từ", description: "Nhìn nghĩa và gõ từ tiếng Anh", icon: Keyboard, accent: "blue" },
-  { id: "quiz", title: "Trắc nghiệm", description: "Đáp án nhiễu cùng loại từ", icon: BrainCircuit, accent: "coral" },
+  { id: "typing", title: "Điền từ", description: "Nhìn nghĩa và gõ lại từ tiếng Anh", icon: Keyboard, accent: "lime" },
+  { id: "quiz", title: "Trắc nghiệm", description: "Chọn đáp án đúng từ 4 lựa chọn", icon: BrainCircuit, accent: "blue" },
 ];
 
 function formatMode(mode) {
@@ -45,15 +46,35 @@ function deckMeta(deck) {
 }
 
 export function isDeckUnlockedForClass(deck, className) {
-  if (!deck || !deck.unlockedClasses) return true;
+  if (!deck || !Array.isArray(deck.unlockedClasses)) return true;
   if (deck.unlockedClasses.includes("*")) return true;
   if (!className) return true;
   return deck.unlockedClasses.includes(className);
 }
 
+export function formatLockDateTime(isoString) {
+  if (!isoString) return "";
+  const d = new Date(isoString);
+  if (isNaN(d.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  const hours = pad(d.getHours());
+  const minutes = pad(d.getMinutes());
+  const day = pad(d.getDate());
+  const month = pad(d.getMonth() + 1);
+  const year = d.getFullYear();
+  return `${hours}:${minutes} ${day}/${month}/${year}`;
+}
+
 export function isDeckLockedForStudent(deck, account) {
   if (!deck || account?.role !== "student") return false;
-  return !isDeckUnlockedForClass(deck, account.className);
+  if (!isDeckUnlockedForClass(deck, account.className)) return true;
+  if (deck.lockAt) {
+    const lockTime = new Date(deck.lockAt).getTime();
+    if (!isNaN(lockTime) && Date.now() > lockTime) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export function App() {
@@ -84,6 +105,7 @@ export function App() {
   const [isResettingPasswords, setIsResettingPasswords] = useState(false);
   const [isUpdatingMode, setIsUpdatingMode] = useState(false);
   const [isUpdatingAccess, setIsUpdatingAccess] = useState(false);
+  const [isUpdatingLockAt, setIsUpdatingLockAt] = useState(false);
   const [selectedDeckId, setSelectedDeckId] = useState("demo");
   const [connection, setConnection] = useState(isSupabaseConfigured ? "connecting" : "demo");
   const [importProgress, setImportProgress] = useState(0);
@@ -283,7 +305,11 @@ export function App() {
       return;
     }
     if (isDeckLockedForStudent(selectedDeck, account)) {
-      showToast(`Bộ từ này đang khóa đối với lớp ${account.className || "của bạn"}.`);
+      if (selectedDeck.lockAt && Date.now() > new Date(selectedDeck.lockAt).getTime()) {
+        showToast("Bộ từ này đã hết hạn làm bài.");
+      } else {
+        showToast(`Bộ từ này đang khóa đối với lớp ${account.className || "của bạn"}.`);
+      }
       return;
     }
     const mode = PRACTICE_MODES.some((item) => item.id === selectedDeck.practiceMode)
@@ -310,7 +336,11 @@ export function App() {
       correct: 0,
       answered: 0,
       feedback: null,
+      feedbackMessage: "",
       input: "",
+      wordMistakes: 0,
+      violationCount: 0,
+      disabledChoices: [],
     });
     setView("study");
     setLastResult(null);
@@ -342,33 +372,44 @@ export function App() {
     return () => lifecycle.abort();
   }, [account?.role, selectedDeck, startStudy]);
 
-
   useEffect(() => {
     if (view !== "study" || !study || account?.role !== "student") return undefined;
     if (document.fullscreenElement) fullscreenSeenRef.current = true;
+
+    const penalizeViolation = (type) => {
+      if (suppressFullscreenPenaltyRef.current) return;
+      fullscreenSeenRef.current = false;
+      const nextViolation = (study.violationCount || 0) + 1;
+      if (nextViolation === 1) {
+        const penalty = Math.max(2, Math.round(study.score * 0.25));
+        const newScore = Math.max(0, study.score - penalty);
+        showToast("⚠️ Vi phạm lần 1 (thoát toàn màn hình/chuyển ứng dụng): Trừ 25% điểm! Hãy bấm vào lại toàn màn hình.");
+        setStudy((prev) => prev ? { ...prev, score: newScore, violationCount: 1 } : null);
+      } else if (nextViolation === 2) {
+        const penalty = Math.max(5, Math.round(study.score * 0.75));
+        const newScore = Math.max(0, study.score - penalty);
+        showToast("⚠️ Vi phạm lần 2: Trừ 75% điểm! Nếu vi phạm lần 3 bài thi sẽ bị hủy lập tức (0 điểm).");
+        setStudy((prev) => prev ? { ...prev, score: newScore, violationCount: 2 } : null);
+      } else {
+        window.clearTimeout(answerTimerRef.current);
+        showToast("⛔ Bài thi đã bị hủy (0 điểm) do vi phạm quy chế quá 2 lần.");
+        finishStudy({ ...study, score: 0 }, false, "violation_limit");
+        setLeaveDialog(false);
+        setView("deck");
+      }
+    };
 
     const penalizeFullscreenExit = () => {
       if (document.fullscreenElement) {
         fullscreenSeenRef.current = true;
         return;
       }
-      if (suppressFullscreenPenaltyRef.current) return;
-      fullscreenSeenRef.current = false;
-      window.clearTimeout(answerTimerRef.current);
-      finishStudy({ ...study, score: study.score - 5 }, false, "fullscreen_exit");
-      setLeaveDialog(false);
-      setView("deck");
-      showToast("Đã thoát toàn màn hình: trừ 5 điểm và kết thúc bài.");
+      penalizeViolation("fullscreen_exit");
     };
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === "hidden") {
-        if (suppressFullscreenPenaltyRef.current) return;
-        window.clearTimeout(answerTimerRef.current);
-        finishStudy({ ...study, score: study.score - 5 }, false, "fullscreen_exit");
-        setLeaveDialog(false);
-        setView("deck");
-        showToast("Phát hiện chuyển ứng dụng / chuyển màn hình: trừ 5 điểm và kết thúc bài.");
+        penalizeViolation("visibility_hidden");
       }
     };
 
@@ -380,28 +421,116 @@ export function App() {
     };
   }, [account?.role, finishStudy, showToast, study, view]);
 
-  const answerCurrent = useCallback((isCorrect) => {
-    if (!study || study.feedback) return;
+  const answerCurrent = useCallback((isCorrect, chosenChoice = null) => {
+    if (!study || (study.feedback && study.feedback === "correct")) return;
     if (account?.role === "student" && !document.fullscreenElement) {
       showToast("Bạn cần vào toàn màn hình trước khi trả lời.");
       return;
     }
-    const nextStudy = {
-      ...study,
-      feedback: isCorrect ? "correct" : "wrong",
-      score: study.score + (isCorrect ? 10 : -3),
-      correct: study.correct + (isCorrect ? 1 : 0),
-      answered: study.answered + 1,
-    };
-    setStudy(nextStudy);
-    window.clearTimeout(answerTimerRef.current);
-    answerTimerRef.current = window.setTimeout(() => {
-      if (nextStudy.index >= nextStudy.items.length - 1) {
-        finishStudy(nextStudy, true);
-        return;
+
+    const currentMistakes = study.wordMistakes || 0;
+
+    if (isCorrect) {
+      let pointsEarned = 10;
+      let msg = "Chính xác! +10 điểm";
+      if (currentMistakes === 1) {
+        pointsEarned = 7.5;
+        msg = "Chính xác! +7.5 điểm (Trừ 25% do sai lần 1)";
+      } else if (currentMistakes >= 2) {
+        pointsEarned = 2.5;
+        msg = "Chính xác! +2.5 điểm (Trừ 75% do sai lần 2)";
       }
-      setStudy({ ...nextStudy, index: nextStudy.index + 1, feedback: null, input: "" });
-    }, 720);
+
+      const nextStudy = {
+        ...study,
+        feedback: "correct",
+        feedbackMessage: msg,
+        score: Math.round((study.score + pointsEarned) * 10) / 10,
+        correct: study.correct + 1,
+        answered: study.answered + 1,
+      };
+      setStudy(nextStudy);
+      window.clearTimeout(answerTimerRef.current);
+      answerTimerRef.current = window.setTimeout(() => {
+        if (nextStudy.index >= nextStudy.items.length - 1) {
+          finishStudy(nextStudy, true);
+          return;
+        }
+        setStudy({
+          ...nextStudy,
+          index: nextStudy.index + 1,
+          feedback: null,
+          feedbackMessage: "",
+          input: "",
+          wordMistakes: 0,
+          disabledChoices: [],
+        });
+      }, 750);
+    } else {
+      const nextMistakes = currentMistakes + 1;
+      const nextDisabledChoices = chosenChoice
+        ? [...(study.disabledChoices || []), chosenChoice]
+        : (study.disabledChoices || []);
+
+      if (nextMistakes === 1) {
+        const nextStudy = {
+          ...study,
+          feedback: "wrong-1",
+          feedbackMessage: "Chưa đúng (Phạm lỗi lần 1: Trừ 25% điểm). Hãy thử lại!",
+          wordMistakes: 1,
+          disabledChoices: nextDisabledChoices,
+          input: "",
+        };
+        setStudy(nextStudy);
+        window.clearTimeout(answerTimerRef.current);
+        answerTimerRef.current = window.setTimeout(() => {
+          setStudy((curr) => curr ? { ...curr, feedback: null, feedbackMessage: "" } : null);
+          typingInputRef.current?.focus();
+        }, 1100);
+      } else if (nextMistakes === 2) {
+        const nextStudy = {
+          ...study,
+          feedback: "wrong-2",
+          feedbackMessage: "Chưa đúng (Phạm lỗi lần 2: Trừ 75% điểm). Hãy thử lần cuối!",
+          wordMistakes: 2,
+          disabledChoices: nextDisabledChoices,
+          input: "",
+        };
+        setStudy(nextStudy);
+        window.clearTimeout(answerTimerRef.current);
+        answerTimerRef.current = window.setTimeout(() => {
+          setStudy((curr) => curr ? { ...curr, feedback: null, feedbackMessage: "" } : null);
+          typingInputRef.current?.focus();
+        }, 1100);
+      } else {
+        const currentItem = study.items[study.index];
+        const nextStudy = {
+          ...study,
+          feedback: "wrong-final",
+          feedbackMessage: `Chưa chính xác (0 điểm). Đáp án: ${currentItem?.term || ""}`,
+          wordMistakes: 3,
+          answered: study.answered + 1,
+          disabledChoices: nextDisabledChoices,
+        };
+        setStudy(nextStudy);
+        window.clearTimeout(answerTimerRef.current);
+        answerTimerRef.current = window.setTimeout(() => {
+          if (nextStudy.index >= nextStudy.items.length - 1) {
+            finishStudy(nextStudy, true);
+            return;
+          }
+          setStudy({
+            ...nextStudy,
+            index: nextStudy.index + 1,
+            feedback: null,
+            feedbackMessage: "",
+            input: "",
+            wordMistakes: 0,
+            disabledChoices: [],
+          });
+        }, 1800);
+      }
+    }
   }, [account?.role, finishStudy, showToast, study]);
 
   useEffect(() => {
@@ -410,7 +539,9 @@ export function App() {
       const isTyping = ["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName);
       if (study.mode === "quiz" && !isTyping && /^[1-4]$/.test(event.key)) {
         const choice = quizChoices[Number(event.key) - 1];
-        if (choice) answerCurrent(choice === currentWord.term);
+        if (choice && !study.disabledChoices?.includes(choice)) {
+          answerCurrent(choice === currentWord.term, choice);
+        }
       }
     };
     window.addEventListener("keydown", handleKey);
@@ -496,11 +627,18 @@ export function App() {
   function confirmLeaveStudy() {
     if (!study) return;
     window.clearTimeout(answerTimerRef.current);
-    const penalized = { ...study, score: study.score - 5 };
+    const nextVio = (study.violationCount || 0) + 1;
+    let newScore = study.score;
+    if (nextVio === 1) {
+      newScore = Math.max(0, Math.round(study.score * 0.75));
+    } else {
+      newScore = Math.max(0, Math.round(study.score * 0.25));
+    }
+    const penalized = { ...study, score: newScore, violationCount: nextVio };
     finishStudy(penalized, false, "left_early");
     setLeaveDialog(false);
     setView(canManage ? "create-deck" : "deck");
-    showToast("Đã rời phiên sớm: trừ 5 điểm.");
+    showToast(`Đã rời phiên sớm (phạm lỗi lần ${nextVio}): trừ ${nextVio === 1 ? "25%" : "75%"} số điểm.`);
   }
 
   async function toggleFullscreen() {
@@ -559,6 +697,35 @@ export function App() {
       showToast(error.message || "Chưa cập nhật được quyền truy cập lớp.");
     } finally {
       setIsUpdatingAccess(false);
+    }
+  }
+
+  async function handleDeckLockAt(newLockAt) {
+    if (!selectedDeck) return;
+    const previous = selectedDeck.lockAt;
+    setDecks((current) =>
+      current.map((deck) =>
+        deck.id === selectedDeck.id ? { ...deck, lockAt: newLockAt } : deck
+      )
+    );
+    if (selectedDeck.isDemo || selectedDeck.isTemporary) {
+      showToast(newLockAt ? `Đã đặt thời hạn khóa bài: ${formatLockDateTime(newLockAt)}.` : "Đã gỡ thời hạn khóa bài (mở tự do).");
+      return;
+    }
+    setIsUpdatingLockAt(true);
+    try {
+      await updateDeckLockAt(selectedDeck.id, newLockAt);
+      showToast(newLockAt ? `Đã đặt thời hạn khóa bài: ${formatLockDateTime(newLockAt)}.` : "Đã gỡ thời hạn khóa bài (mở tự do).");
+    } catch (error) {
+      console.error("Không thể cập nhật thời hạn khóa bài", error);
+      setDecks((current) =>
+        current.map((deck) =>
+          deck.id === selectedDeck.id ? { ...deck, lockAt: previous } : deck
+        )
+      );
+      showToast("Chưa cập nhật được thời hạn khóa bài.");
+    } finally {
+      setIsUpdatingLockAt(false);
     }
   }
 
@@ -762,11 +929,15 @@ export function App() {
     <div className="app-shell">
       {canManage && <input ref={fileInputRef} className="visually-hidden" type="file" accept="application/pdf,.pdf" onChange={(event) => handlePdf(event.target.files?.[0])} />}
 
-      <header className="topbar">
-        <button className="brand" type="button" onClick={() => (view === "study" ? setLeaveDialog(true) : setView(canManage ? "create-deck" : "deck"))} aria-label="Về trang chủ">
-          <span className="brand-mark"><Layers3 size={20} /></span>
-          <span>Vocab <b>with me</b></span>
-        </button>
+      <header className={`topbar ${view === "study" ? "study-topbar" : ""}`}>
+        {view !== "study" ? (
+          <button className="brand" type="button" onClick={() => (view === "study" ? setLeaveDialog(true) : setView(canManage ? "create-deck" : "deck"))} aria-label="Về trang chủ">
+            <span className="brand-mark"><Layers3 size={20} /></span>
+            <span>Vocab <b>with me</b></span>
+          </button>
+        ) : (
+          <div className="study-topbar-placeholder" />
+        )}
         <div className="topbar-actions">
           <span className="account-pill">
             <span className="account-avatar-circle">{account.displayName ? account.displayName.trim().charAt(0).toUpperCase() : (canManage ? "G" : "S")}</span>
@@ -775,7 +946,7 @@ export function App() {
               <small>{canManage ? "Giảng viên quản trị" : account.className ? `Lớp ${account.className}` : "Sinh viên"}</small>
             </span>
           </span>
-          {canManage && <button className="icon-button student-manage-shortcut" type="button" onClick={() => setView((current) => current === "students" ? "create-deck" : "students")} aria-label={view === "students" ? "Mở tạo bộ từ" : "Quản lý sinh viên"} title="Quản lý sinh viên"><Users size={18} /></button>}
+          {canManage && view !== "study" && <button className="icon-button student-manage-shortcut" type="button" onClick={() => setView((current) => current === "students" ? "create-deck" : "students")} aria-label={view === "students" ? "Mở tạo bộ từ" : "Quản lý sinh viên"} title="Quản lý sinh viên"><Users size={18} /></button>}
           {!canManage && view !== "study" && <button className="icon-text-button" type="button" onClick={toggleFullscreen}>
             {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
             {isFullscreen ? "Thu nhỏ" : "Toàn màn hình"}
@@ -784,113 +955,115 @@ export function App() {
         </div>
       </header>
 
-      <main className="workspace">
-        <aside className="sidebar">
-          <div className="eyebrow">{canManage ? "Quản lý lớp học" : "Tiến độ gần nhất"}</div>
-          {canManage ? <div className="score-card teacher-sidebar-card">
-            <div><FileText size={22} /> Bộ từ đã tạo</div>
-            <strong>{uploadedDecks.length} <small>bộ từ</small></strong>
-            <p>{totalWords ? `${totalWords} từ đã sẵn sàng giao cho sinh viên.` : "Nhập PDF đầu tiên để tạo bài cho lớp."}</p>
-          </div> : <div className="score-card">
-            <div><Flame size={22} /> Điểm phiên</div>
-            <strong>{lastSession?.score ?? 0} <small>điểm</small></strong>
-            <div className="score-track"><span style={{ width: `${Math.min(100, Math.max(8, lastSession?.score || 8))}%` }} /></div>
-            <p>{lastSession ? "Kết quả của lần làm bài gần nhất." : "Hoàn thành bài đầu tiên để lưu điểm."}</p>
-          </div>}
+      <main className={`workspace ${view === "study" ? "study-workspace" : ""}`}>
+        {view !== "study" && (
+          <aside className="sidebar">
+            <div className="eyebrow">{canManage ? "Quản lý lớp học" : "Tiến độ gần nhất"}</div>
+            {canManage ? <div className="score-card teacher-sidebar-card">
+              <div><FileText size={22} /> Bộ từ đã tạo</div>
+              <strong>{uploadedDecks.length} <small>bộ từ</small></strong>
+              <p>{totalWords ? `${totalWords} từ đã sẵn sàng giao cho sinh viên.` : "Nhập PDF đầu tiên để tạo bài cho lớp."}</p>
+            </div> : <div className="score-card">
+              <div><Flame size={22} /> Điểm phiên</div>
+              <strong>{lastSession?.score ?? 0} <small>điểm</small></strong>
+              <div className="score-track"><span style={{ width: `${Math.min(100, Math.max(8, lastSession?.score || 8))}%` }} /></div>
+              <p>{lastSession ? "Kết quả của lần làm bài gần nhất." : "Hoàn thành bài đầu tiên để lưu điểm."}</p>
+            </div>}
 
-          <nav className="sidebar-nav" aria-label="Khu vực ứng dụng">
-            {canManage ? (
-              <button
-                className={view === "create-deck" ? "active" : ""}
-                type="button"
-                onClick={() => {
-                  if (view === "study") setLeaveDialog(true);
-                  else setView("create-deck");
-                }}
-              >
-                <BookOpen size={17} /> Tạo bộ từ
-              </button>
-            ) : (
-              <button
-                className={view === "deck" || view === "home" ? "active" : ""}
-                type="button"
-                onClick={() => {
-                  if (view === "study") setLeaveDialog(true);
-                  else setView("deck");
-                }}
-              >
-                <BookOpen size={17} /> Bài tập của tôi
-              </button>
-            )}
-            {canManage && (
-              <button
-                className={view === "students" ? "active" : ""}
-                type="button"
-                onClick={() => {
-                  if (view === "study") setLeaveDialog(true);
-                  else setView("students");
-                }}
-              >
-                <Users size={17} /> Tài khoản & điểm <span>{students.length}</span>
-              </button>
-            )}
-          </nav>
-
-          <div className="section-heading">
-            <span>{canManage ? "Bộ từ của bạn" : "Bộ từ của lớp"}</span>
-            {canManage && (
-              <button
-                type="button"
-                onClick={() => setView("create-deck")}
-                aria-label="Tạo bộ từ mới"
-                title="Tạo bộ từ mới từ PDF"
-              >
-                <Plus size={15} />
-              </button>
-            )}
-          </div>
-          <div className="deck-list">
-            {decks.map((deck, index) => (
-              <div key={deck.id} className="deck-item-wrap">
+            <nav className="sidebar-nav" aria-label="Khu vực ứng dụng">
+              {canManage ? (
                 <button
-                  className={`deck-row ${view === "deck" && selectedDeckId === deck.id ? "active" : ""}`}
+                  className={view === "create-deck" ? "active" : ""}
                   type="button"
                   onClick={() => {
                     if (view === "study") setLeaveDialog(true);
-                    else { setSelectedDeckId(deck.id); setView("deck"); }
+                    else setView("create-deck");
                   }}
                 >
-                  <span className={`deck-icon ${isDeckLockedForStudent(deck, account) ? "locked" : (index % 2 ? "blue" : "coral")}`}>{isDeckLockedForStudent(deck, account) ? <Lock size={16} /> : deck.isDemo ? <Sparkles size={18} /> : <BookOpen size={18} />}</span>
-                  <span><b>{deck.title}</b><small>{isDeckLockedForStudent(deck, account) ? "🔒 Đã khóa cho lớp bạn" : deckMeta(deck)}</small></span>
+                  <BookOpen size={17} /> Tạo bộ từ
                 </button>
-                {canManage && !deck.isDemo && (
-                  <button
-                    className="deck-delete-btn"
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setDeckToDelete(deck);
-                    }}
-                    title={`Xóa bộ từ "${deck.title}"`}
-                    aria-label={`Xóa bộ từ "${deck.title}"`}
-                  >
-                    <Trash2 size={15} />
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-          {canManage && (
-            <>
-              <button className="upload-mini" type="button" onClick={() => setView("create-deck")}>
-                <FileUp size={18} /> Nhập PDF mới
-              </button>
-              <p className="format-tip">Mỗi dòng theo mẫu<br /><code>new(adj): mới</code></p>
-            </>
-          )}
-        </aside>
+              ) : (
+                <button
+                  className={view === "deck" || view === "home" ? "active" : ""}
+                  type="button"
+                  onClick={() => {
+                    if (view === "study") setLeaveDialog(true);
+                    else setView("deck");
+                  }}
+                >
+                  <BookOpen size={17} /> Bài tập của tôi
+                </button>
+              )}
+              {canManage && (
+                <button
+                  className={view === "students" ? "active" : ""}
+                  type="button"
+                  onClick={() => {
+                    if (view === "study") setLeaveDialog(true);
+                    else setView("students");
+                  }}
+                >
+                  <Users size={17} /> Tài khoản & điểm <span>{students.length}</span>
+                </button>
+              )}
+            </nav>
 
-        <section className="content-stage">
+            <div className="section-heading">
+              <span>{canManage ? "Bộ từ của bạn" : "Bộ từ của lớp"}</span>
+              {canManage && (
+                <button
+                  type="button"
+                  onClick={() => setView("create-deck")}
+                  aria-label="Tạo bộ từ mới"
+                  title="Tạo bộ từ mới từ PDF"
+                >
+                  <Plus size={15} />
+                </button>
+              )}
+            </div>
+            <div className="deck-list">
+              {decks.map((deck, index) => (
+                <div key={deck.id} className="deck-item-wrap">
+                  <button
+                    className={`deck-row ${view === "deck" && selectedDeckId === deck.id ? "active" : ""}`}
+                    type="button"
+                    onClick={() => {
+                      if (view === "study") setLeaveDialog(true);
+                      else { setSelectedDeckId(deck.id); setView("deck"); }
+                    }}
+                  >
+                    <span className={`deck-icon ${isDeckLockedForStudent(deck, account) ? "locked" : (index % 2 ? "blue" : "coral")}`}>{isDeckLockedForStudent(deck, account) ? <Lock size={16} /> : deck.isDemo ? <Sparkles size={18} /> : <BookOpen size={18} />}</span>
+                    <span><b>{deck.title}</b><small>{isDeckLockedForStudent(deck, account) ? (deck.lockAt && Date.now() > new Date(deck.lockAt).getTime() ? "🔒 Đã hết hạn làm bài" : "🔒 Đã khóa cho lớp bạn") : (deck.lockAt ? `⏳ Hạn: ${formatLockDateTime(deck.lockAt)}` : deckMeta(deck))}</small></span>
+                  </button>
+                  {canManage && !deck.isDemo && (
+                    <button
+                      className="deck-delete-btn"
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeckToDelete(deck);
+                      }}
+                      title={`Xóa bộ từ "${deck.title}"`}
+                      aria-label={`Xóa bộ từ "${deck.title}"`}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            {canManage && (
+              <>
+                <button className="upload-mini" type="button" onClick={() => setView("create-deck")}>
+                  <FileUp size={18} /> Nhập PDF mới
+                </button>
+                <p className="format-tip">Mỗi dòng theo mẫu<br /><code>new(adj): mới</code></p>
+              </>
+            )}
+          </aside>
+        )}
+
+        <section className={`content-stage ${view === "study" ? "study-content-stage" : ""}`}>
           {((view === "create-deck" && canManage) || (view === "home" && canManage)) && (
             <CreateDeckView
               isImporting={isImporting}
@@ -912,12 +1085,14 @@ export function App() {
               isImporting={isImporting}
               isUpdatingMode={isUpdatingMode}
               isUpdatingAccess={isUpdatingAccess}
+              isUpdatingLockAt={isUpdatingLockAt}
               isDeletingDeck={isDeletingDeck}
               importProgress={importProgress}
               onPickPdf={() => fileInputRef.current?.click()}
               onStart={startStudy}
               onModeChange={handleDeckPracticeMode}
               onClassAccessChange={handleDeckClassAccess}
+              onLockAtChange={handleDeckLockAt}
               onDeleteDeck={(deck) => setDeckToDelete(deck)}
               onNavigateCreateDeck={() => setView("create-deck")}
             />
@@ -1928,7 +2103,183 @@ break down(phrase): bị hỏng, suy sụp`}
   );
 }
 
-function HomeView({ deck, account, canManage, availableClasses = [], isImporting, isUpdatingMode, isUpdatingAccess, isDeletingDeck, importProgress, onPickPdf, onStart, onModeChange, onClassAccessChange, onDeleteDeck, onNavigateCreateDeck }) {
+function DeckLockSettings({ lockAt, onChangeLockAt, disabled }) {
+  const [inputValue, setInputValue] = useState(() => {
+    if (!lockAt) return "";
+    try {
+      const d = new Date(lockAt);
+      if (isNaN(d.getTime())) return "";
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    } catch {
+      return "";
+    }
+  });
+
+  useEffect(() => {
+    if (!lockAt) {
+      setInputValue("");
+      return;
+    }
+    try {
+      const d = new Date(lockAt);
+      if (isNaN(d.getTime())) {
+        setInputValue("");
+        return;
+      }
+      const pad = (n) => String(n).padStart(2, "0");
+      setInputValue(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`);
+    } catch {
+      setInputValue("");
+    }
+  }, [lockAt]);
+
+  const isLocked = Boolean(lockAt && Date.now() > new Date(lockAt).getTime());
+  const hasLock = Boolean(lockAt);
+
+  function handleApply() {
+    if (!inputValue) {
+      onChangeLockAt(null);
+      return;
+    }
+    const d = new Date(inputValue);
+    if (!isNaN(d.getTime())) {
+      onChangeLockAt(d.toISOString());
+    }
+  }
+
+  function handleClear() {
+    setInputValue("");
+    onChangeLockAt(null);
+  }
+
+  function handlePreset(type) {
+    const now = new Date();
+    const target = new Date();
+    if (type === "tonight") {
+      target.setHours(23, 59, 0, 0);
+    } else if (type === "plus1day") {
+      target.setDate(now.getDate() + 1);
+      target.setHours(23, 59, 0, 0);
+    } else if (type === "plus3days") {
+      target.setDate(now.getDate() + 3);
+      target.setHours(23, 59, 0, 0);
+    } else if (type === "plus1week") {
+      target.setDate(now.getDate() + 7);
+      target.setHours(23, 59, 0, 0);
+    }
+    const pad = (n) => String(n).padStart(2, "0");
+    const formatted = `${target.getFullYear()}-${pad(target.getMonth() + 1)}-${pad(target.getDate())}T${pad(target.getHours())}:${pad(target.getMinutes())}`;
+    setInputValue(formatted);
+    onChangeLockAt(target.toISOString());
+  }
+
+  return (
+    <div className="deck-lock-settings-card">
+      <div className="lock-status-row">
+        <span className={`lock-badge-pill ${!hasLock ? "open" : isLocked ? "expired" : "active"}`}>
+          {isLocked ? <Lock size={15} /> : <Clock size={15} />}
+          <span>
+            {!hasLock
+              ? "Trạng thái: Không giới hạn thời gian (luôn mở)"
+              : isLocked
+              ? `Trạng thái: Đã hết hạn khóa bài (${formatLockDateTime(lockAt)})`
+              : `Trạng thái: Đang mở - Sẽ khóa lúc: ${formatLockDateTime(lockAt)}`}
+          </span>
+        </span>
+      </div>
+
+      <div className="lock-input-group">
+        <label htmlFor="deck-lock-datetime">Chọn ngày & giờ tự động khóa bài:</label>
+        <div className="lock-input-row">
+          <input
+            id="deck-lock-datetime"
+            type="datetime-local"
+            className="datetime-picker-input"
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            disabled={disabled}
+          />
+          <button
+            type="button"
+            className="primary-button compact"
+            onClick={handleApply}
+            disabled={disabled || (!inputValue && !lockAt)}
+          >
+            <Check size={16} /> Lưu giờ khóa
+          </button>
+          {hasLock && (
+            <button
+              type="button"
+              className="secondary-button compact"
+              onClick={handleClear}
+              disabled={disabled}
+              title="Xóa hẹn giờ, mở bài không giới hạn"
+            >
+              Mở vĩnh viễn
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="lock-presets-row">
+        <span className="preset-label">Hẹn giờ nhanh:</span>
+        <button
+          type="button"
+          className="preset-btn"
+          onClick={() => handlePreset("tonight")}
+          disabled={disabled}
+        >
+          23:59 hôm nay
+        </button>
+        <button
+          type="button"
+          className="preset-btn"
+          onClick={() => handlePreset("plus1day")}
+          disabled={disabled}
+        >
+          +1 ngày (23:59)
+        </button>
+        <button
+          type="button"
+          className="preset-btn"
+          onClick={() => handlePreset("plus3days")}
+          disabled={disabled}
+        >
+          +3 ngày
+        </button>
+        <button
+          type="button"
+          className="preset-btn"
+          onClick={() => handlePreset("plus1week")}
+          disabled={disabled}
+        >
+          +1 tuần
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function HomeView({
+  deck,
+  account,
+  canManage,
+  availableClasses = [],
+  isImporting,
+  isUpdatingMode,
+  isUpdatingAccess,
+  isUpdatingLockAt,
+  isDeletingDeck,
+  importProgress,
+  onPickPdf,
+  onStart,
+  onModeChange,
+  onClassAccessChange,
+  onLockAtChange,
+  onDeleteDeck,
+  onNavigateCreateDeck,
+}) {
   const posCounts = useMemo(() => {
     const counts = {};
     for (const word of deck.words) counts[word.partOfSpeech] = (counts[word.partOfSpeech] || 0) + 1;
@@ -1937,12 +2288,17 @@ function HomeView({ deck, account, canManage, availableClasses = [], isImporting
   const assignedMode = PRACTICE_MODES.find((mode) => mode.id === deck.practiceMode) || PRACTICE_MODES[0];
   const AssignedIcon = assignedMode.icon;
   const isLockedForMe = isDeckLockedForStudent(deck, account);
+  const isExpired = Boolean(deck.lockAt && Date.now() > new Date(deck.lockAt).getTime());
 
   return (
     <div className="home-view">
       <div className="mobile-deck-label">Bộ từ đang chọn</div>
       <div className="home-head">
-        <div><div className="eyebrow">{canManage ? "Thiết lập bài tập" : "Bài giảng viên đã giao"}</div><h1>{deck.title}</h1><p>{deck.sourceFileName || "Bộ từ vựng của lớp"}</p></div>
+        <div>
+          <div className="eyebrow">{canManage ? "Thiết lập bài tập" : "Bài giảng viên đã giao"}</div>
+          <h1>{deck.title}</h1>
+          <p>{deck.sourceFileName || "Bộ từ vựng của lớp"}</p>
+        </div>
         <div className="home-head-actions">
           {canManage && !deck.isDemo && (
             <button className="danger-button compact delete-deck-action" type="button" onClick={() => onDeleteDeck(deck)} disabled={isDeletingDeck} title="Xóa bộ từ này">
@@ -1960,64 +2316,112 @@ function HomeView({ deck, account, canManage, availableClasses = [], isImporting
       </div>
 
       <div className="deck-overview">
-        <div className="overview-main"><span className="overview-icon"><BookOpen size={28} /></span><div><strong>{deck.words.length}</strong><span>{canManage ? "từ trong bộ này" : "từ cần hoàn thành"}</span></div></div>
+        <div className="overview-main">
+          <span className="overview-icon"><BookOpen size={28} /></span>
+          <div>
+            <strong>{deck.words.length}</strong>
+            <span>{canManage ? "từ trong bộ này" : "từ cần hoàn thành"}</span>
+          </div>
+        </div>
         <div className="pos-cloud">{posCounts.map(([pos, count]) => <span key={pos}>{POS_LABELS[pos]} <b>{count}</b></span>)}</div>
       </div>
 
-      {canManage ? <>
-        <section className="assignment-panel">
-          <div className="section-title-row">
-            <div><span className="eyebrow">Thể loại làm bài</span><h2>Giảng viên chọn cho sinh viên</h2></div>
-            {isUpdatingMode && <span className="points-rule"><LoaderCircle className="spin" size={15} /> Đang lưu…</span>}
-          </div>
-          <div className="mode-selector" role="group" aria-label="Chọn thể loại làm bài">
-            {PRACTICE_MODES.map((mode) => {
-              const Icon = mode.icon;
-              const selected = assignedMode.id === mode.id;
-              return <button key={mode.id} className={selected ? "active" : ""} type="button" aria-pressed={selected} onClick={() => onModeChange(mode.id)} disabled={isUpdatingMode}><span><Icon size={21} /></span><span><b>{mode.title}</b><small>{mode.description}</small></span>{selected && <Check size={19} />}</button>;
-            })}
-          </div>
-        </section>
-
-        {!deck.isDemo && (
+      {canManage ? (
+        <>
           <section className="assignment-panel">
             <div className="section-title-row">
-              <div><span className="eyebrow">Quyền học theo lớp</span><h2>Mở / Khóa bài tập cho từng lớp</h2></div>
-              {isUpdatingAccess && <span className="points-rule"><LoaderCircle className="spin" size={15} /> Đang lưu…</span>}
+              <div><span className="eyebrow">Thể loại làm bài</span><h2>Giảng viên chọn cho sinh viên</h2></div>
+              {isUpdatingMode && <span className="points-rule"><LoaderCircle className="spin" size={15} /> Đang lưu…</span>}
             </div>
-            <ClassAccessControl
-              availableClasses={availableClasses}
-              unlockedClasses={deck.unlockedClasses ?? null}
-              onChange={onClassAccessChange}
-              disabled={isUpdatingAccess}
-            />
+            <div className="mode-selector" role="group" aria-label="Chọn thể loại làm bài">
+              {PRACTICE_MODES.map((mode) => {
+                const Icon = mode.icon;
+                const selected = assignedMode.id === mode.id;
+                return (
+                  <button key={mode.id} className={selected ? "active" : ""} type="button" aria-pressed={selected} onClick={() => onModeChange(mode.id)} disabled={isUpdatingMode}>
+                    <span><Icon size={21} /></span>
+                    <span><b>{mode.title}</b><small>{mode.description}</small></span>
+                    {selected && <Check size={19} />}
+                  </button>
+                );
+              })}
+            </div>
           </section>
-        )}
 
-        <button className="drop-zone" type="button" onClick={onNavigateCreateDeck || onPickPdf}>
-          <span><FileText size={21} /></span>
-          <span><b>Tạo bộ từ mới từ PDF</b><small>Chuyển sang tab Tạo bộ từ để xem hướng dẫn định dạng file và tải lên</small></span>
-          <span className="drop-action">Tạo bộ từ →</span>
-        </button>
-      </> : isLockedForMe ? (
+          {!deck.isDemo && (
+            <>
+              <section className="assignment-panel">
+                <div className="section-title-row">
+                  <div>
+                    <span className="eyebrow">Thời hạn làm bài</span>
+                    <h2>Cài đặt ngày & giờ khóa bài tự động</h2>
+                  </div>
+                  {isUpdatingLockAt && <span className="points-rule"><LoaderCircle className="spin" size={15} /> Đang lưu…</span>}
+                </div>
+                <DeckLockSettings
+                  lockAt={deck.lockAt}
+                  onChangeLockAt={onLockAtChange}
+                  disabled={isUpdatingLockAt}
+                />
+              </section>
+
+              <section className="assignment-panel">
+                <div className="section-title-row">
+                  <div><span className="eyebrow">Quyền học theo lớp</span><h2>Mở / Khóa bài tập cho từng lớp</h2></div>
+                  {isUpdatingAccess && <span className="points-rule"><LoaderCircle className="spin" size={15} /> Đang lưu…</span>}
+                </div>
+                <ClassAccessControl
+                  availableClasses={availableClasses}
+                  unlockedClasses={deck.unlockedClasses ?? null}
+                  onChange={onClassAccessChange}
+                  disabled={isUpdatingAccess}
+                />
+              </section>
+            </>
+          )}
+
+          <button className="drop-zone" type="button" onClick={onNavigateCreateDeck || onPickPdf}>
+            <span><FileText size={21} /></span>
+            <span><b>Tạo bộ từ mới từ PDF</b><small>Chuyển sang tab Tạo bộ từ để xem hướng dẫn định dạng file và tải lên</small></span>
+            <span className="drop-action">Tạo bộ từ →</span>
+          </button>
+        </>
+      ) : isLockedForMe ? (
         <div className="deck-locked-container">
           <div className="deck-locked-badge"><Lock size={28} /></div>
           <div className="deck-locked-content">
-            <div className="eyebrow">Bộ từ đang tạm khóa</div>
-            <h2>Bài tập chưa mở cho lớp {account?.className || "của bạn"}</h2>
-            <p>Giảng viên đang khóa bộ từ này đối với lớp của bạn. Hãy liên hệ với giảng viên để được mở quyền vào làm bài.</p>
+            <div className="eyebrow">{isExpired ? "Bài tập đã hết hạn" : "Bộ từ đang tạm khóa"}</div>
+            <h2>
+              {isExpired
+                ? `Thời hạn làm bài đã kết thúc (${formatLockDateTime(deck.lockAt)})`
+                : `Bài tập chưa mở cho lớp ${account?.className || "của bạn"}`}
+            </h2>
+            <p>
+              {isExpired
+                ? "Giảng viên đã cài đặt thời hạn cho bài tập này và hiện tại bài đã bị khóa. Vui lòng liên hệ giảng viên nếu bạn cần gia hạn làm bù."
+                : "Giảng viên đang khóa bộ từ này đối với lớp của bạn. Hãy liên hệ với giảng viên để được mở quyền vào làm bài."}
+            </p>
           </div>
         </div>
-      ) : <>
-        <div className="section-title-row">
-          <div><span className="eyebrow">Thể loại được giao</span><h2>{assignedMode.title}</h2></div>
-          <span className="points-rule">Đúng +10 · Sai −3 · Thoát −5</span>
-        </div>
-        <button className={`mode-card assigned-mode-card ${assignedMode.accent}`} type="button" onClick={onStart}>
-          <span className="mode-icon"><AssignedIcon size={25} /></span>
-          <span className="mode-copy"><b>Bắt đầu {assignedMode.title.toLowerCase()}</b><small>{assignedMode.description}. Bài sẽ tự chuyển sang toàn màn hình.</small></span><ChevronRight className="mode-arrow" size={21} />
-        </button>
-      </>}
+      ) : (
+        <>
+          {deck.lockAt && (
+            <div className="deadline-notice-banner">
+              <Clock size={16} />
+              <span>Hạn chót nộp bài: <b>{formatLockDateTime(deck.lockAt)}</b>. Vui lòng hoàn thành trước thời gian này.</span>
+            </div>
+          )}
+          <div className="section-title-row">
+            <div><span className="eyebrow">Thể loại được giao</span><h2>{assignedMode.title}</h2></div>
+            <span className="points-rule">Đúng +10 · Sai lần 1: −25% · Sai lần 2: −75% · Thoát/vi phạm: −25% / −75%</span>
+          </div>
+          <button className={`mode-card assigned-mode-card ${assignedMode.accent}`} type="button" onClick={onStart}>
+            <span className="mode-icon"><AssignedIcon size={25} /></span>
+            <span className="mode-copy"><b>Bắt đầu {assignedMode.title.toLowerCase()}</b><small>{assignedMode.description}. Bài sẽ tự chuyển sang toàn màn hình.</small></span>
+            <ChevronRight className="mode-arrow" size={21} />
+          </button>
+        </>
+      )}
     </div>
   );
 }
@@ -2079,36 +2483,128 @@ function StudyView({ study, currentWord, quizChoices, typingInputRef, isFullscre
     <div className={`study-view ${resultClass}`}>
       <div className="study-head">
         <button className="back-link" type="button" onClick={onBack}><ArrowLeft size={18} /> Rời phiên</button>
-        <div className="study-title"><div className="eyebrow">{String(study.index + 1).padStart(2, "0")} / {String(study.items.length).padStart(2, "0")}</div><h1>{study.deckTitle}</h1></div>
+        <div className="study-title">
+          <div className="eyebrow">{String(study.index + 1).padStart(2, "0")} / {String(study.items.length).padStart(2, "0")}</div>
+          <h1>{study.deckTitle}</h1>
+        </div>
         <div className="session-points"><Sparkles size={18} /><span>Điểm phiên</span><strong>{study.score}</strong></div>
       </div>
       <div className="progress-line"><span style={{ width: `${progress}%` }} /></div>
       <div className="assigned-study-mode"><AssignedIcon size={18} /><span>Giảng viên đã giao</span><strong>{assignedMode.title}</strong></div>
-      {!isFullscreen && <button className="fullscreen-required" type="button" onClick={onFullscreen}><Maximize2 size={19} /><span><b>Vào toàn màn hình để tiếp tục</b><small>Thoát toàn màn hình khi đang làm sẽ bị trừ 5 điểm.</small></span></button>}
+      {!isFullscreen && (
+        <button className="fullscreen-required" type="button" onClick={onFullscreen}>
+          <Maximize2 size={19} />
+          <span>
+            <b>Vào toàn màn hình để tiếp tục</b>
+            <small>Thoát toàn màn hình khi đang làm: lần đầu trừ 25% điểm, lần hai trừ 75% điểm, lần ba hủy bài.</small>
+          </span>
+        </button>
+      )}
 
-      {study.mode === "typing" && <div className="exercise-card">
-        <div className="card-meta"><span className="pos-chip">{POS_LABELS[currentWord.partOfSpeech]}</span><span>Gõ từ tiếng Anh</span></div>
-        <div className="prompt-label">Từ nào có nghĩa là</div><div className="meaning-prompt">{currentWord.meaning}</div>
-        <form className="typing-form" onSubmit={onTypingSubmit}>
-          <input ref={typingInputRef} value={study.input} onChange={(event) => onInput(event.target.value)} placeholder="Nhập từ vựng…" autoComplete="off" spellCheck="false" disabled={Boolean(study.feedback)} aria-label="Nhập từ tiếng Anh" />
-          <button type="submit" disabled={!study.input.trim() || Boolean(study.feedback)}>Kiểm tra <kbd>Enter</kbd></button>
-        </form>
-        {study.feedback === "wrong" && <div className="correct-answer">Đáp án: <strong>{currentWord.term}</strong></div>}
-      </div>}
+      {study.mode === "typing" && (
+        <div className="exercise-card">
+          <div className="card-meta">
+            <span className="pos-chip">{POS_LABELS[currentWord.partOfSpeech]}</span>
+            <span>Gõ từ tiếng Anh</span>
+            {study.wordMistakes === 1 && (
+              <span className="attempt-badge">⚠️ Sai lần 1 (−25% điểm câu này)</span>
+            )}
+            {study.wordMistakes === 2 && (
+              <span className="attempt-badge">⚠️ Sai lần 2 (−75% điểm câu này)</span>
+            )}
+          </div>
+          <div className="prompt-label">Từ nào có nghĩa là</div>
+          <div className="meaning-prompt">{currentWord.meaning}</div>
+          <form className="typing-form" onSubmit={onTypingSubmit}>
+            <input
+              ref={typingInputRef}
+              value={study.input}
+              onChange={(event) => onInput(event.target.value)}
+              placeholder="Nhập từ vựng…"
+              autoComplete="off"
+              spellCheck="false"
+              disabled={Boolean(study.feedback === "correct" || study.feedback === "wrong-final")}
+              aria-label="Nhập từ tiếng Anh"
+            />
+            <button type="submit" disabled={!study.input.trim() || Boolean(study.feedback)}>Kiểm tra <kbd>Enter</kbd></button>
+          </form>
+          {study.feedback === "wrong-final" && <div className="correct-answer">Đáp án: <strong>{currentWord.term}</strong></div>}
+        </div>
+      )}
 
-      {study.mode === "quiz" && <div className="exercise-card quiz-card">
-        <div className="card-meta"><span className="pos-chip">{POS_LABELS[currentWord.partOfSpeech]}</span><span>Chọn từ đúng</span></div>
-        <div className="prompt-label">Từ nào có nghĩa là</div><div className="meaning-prompt">{currentWord.meaning}</div>
-        <div className="quiz-grid">{quizChoices.map((choice, index) => {
-          const isCorrect = choice === currentWord.term;
-          const className = study.feedback ? (isCorrect ? "correct-choice" : "muted-choice") : "";
-          return <button key={choice} className={className} type="button" onClick={() => onAnswer(isCorrect)} disabled={Boolean(study.feedback)}><kbd>{index + 1}</kbd><span>{choice}</span>{study.feedback && isCorrect && <Check size={18} />}</button>;
-        })}</div>
-        <p className="same-pos-note">Các đáp án nhiễu được chọn ngẫu nhiên từ cùng loại từ <b>{currentWord.partOfSpeech}</b>.</p>
-      </div>}
+      {study.mode === "quiz" && (
+        <div className="exercise-card quiz-card">
+          <div className="card-meta">
+            <span className="pos-chip">{POS_LABELS[currentWord.partOfSpeech]}</span>
+            <span>Chọn từ đúng</span>
+            {study.wordMistakes === 1 && (
+              <span className="attempt-badge">⚠️ Sai lần 1 (−25% điểm câu này)</span>
+            )}
+            {study.wordMistakes === 2 && (
+              <span className="attempt-badge">⚠️ Sai lần 2 (−75% điểm câu này)</span>
+            )}
+          </div>
+          <div className="prompt-label">Từ nào có nghĩa là</div>
+          <div className="meaning-prompt">{currentWord.meaning}</div>
+          <div className="quiz-grid">
+            {quizChoices.map((choice, index) => {
+              const isCorrect = choice === currentWord.term;
+              const isEliminated = (study.disabledChoices || []).includes(choice);
+              let className = "";
+              if (study.feedback === "correct" && isCorrect) {
+                className = "correct-choice";
+              } else if (study.feedback === "wrong-final") {
+                className = isCorrect ? "correct-choice" : "muted-choice";
+              } else if (isEliminated) {
+                className = "muted-choice disabled-choice";
+              }
+              return (
+                <button
+                  key={choice}
+                  className={className}
+                  type="button"
+                  onClick={() => onAnswer(isCorrect, choice)}
+                  disabled={Boolean(study.feedback) || isEliminated}
+                >
+                  <kbd>{index + 1}</kbd>
+                  <span>{choice}</span>
+                  {study.feedback && isCorrect && <Check size={18} />}
+                  {isEliminated && <X size={16} />}
+                </button>
+              );
+            })}
+          </div>
+          <p className="same-pos-note">Các đáp án nhiễu được chọn ngẫu nhiên từ cùng loại từ <b>{currentWord.partOfSpeech}</b>.</p>
+        </div>
+      )}
 
-      {study.feedback && <div className={`feedback-banner ${study.feedback}`} role="status">{study.feedback === "correct" ? <><Check size={19} /> Chính xác! +10 điểm</> : <><X size={19} /> Chưa đúng. −3 điểm</>}</div>}
-      <p className="leave-note">Rời phiên học trước khi hoàn thành sẽ bị trừ 5 điểm.</p>
+      {study.feedback && (
+        <div
+          className={`feedback-banner ${
+            study.feedback === "correct"
+              ? "correct"
+              : study.feedback === "wrong-1"
+              ? "warning"
+              : study.feedback === "wrong-2"
+              ? "warning-strong"
+              : "wrong"
+          }`}
+          role="status"
+        >
+          {study.feedback === "correct" ? (
+            <Check size={19} />
+          ) : study.feedback === "wrong-final" ? (
+            <X size={19} />
+          ) : (
+            <CircleAlert size={19} />
+          )}
+          <span>{study.feedbackMessage || (study.feedback === "correct" ? "Chính xác! +10 điểm" : "Chưa đúng")}</span>
+        </div>
+      )}
+
+      <p className="penalty-reminder-note">
+        * Quy tắc tính điểm & phạm lỗi: Lần đầu phạm lỗi trừ 25% số điểm, lần hai trừ 75% số điểm, lần ba 0 điểm. Rời bài sớm hoặc thoát toàn màn hình cũng bị trừ theo quy tắc này.
+      </p>
     </div>
   );
 }
