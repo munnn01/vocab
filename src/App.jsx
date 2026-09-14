@@ -506,7 +506,7 @@ export function App() {
   const answerCurrent = useCallback((isCorrect, chosenChoice = null) => {
     if (!study || (study.feedback && study.feedback === "correct")) return;
     if (account?.role === "student" && !document.fullscreenElement) {
-      showToast("Bạn cần vào toàn màn hình trước khi trả lời.");
+      showToast("Vui lòng bấm 'Bật toàn màn hình' ở ô thông báo phía trên để tiếp tục làm bài.");
       return;
     }
 
@@ -1739,65 +1739,69 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
             <p>Chọn danh sách để xuất chính file đã nhập, có thêm cột Điểm và Lỗi trong quá trình làm bài.</p>
           </div>
           <div className="result-tools">
-            <select
-              className="roster-select"
-              value={selectedRosterId}
-              onChange={(event) => setSelectedRosterId(event.target.value)}
-              disabled={!rosters.length}
-            >
-              <option value="">{rosters.length ? "Danh sách" : "Chưa có file danh sách"}</option>
-              {rosters.map((roster) => (
-                <option key={roster.id} value={roster.id}>
-                  {getRosterDisplayLabel(roster, students)}
-                </option>
-              ))}
-            </select>
-            {selectedRosterId && (
-              <button
-                className="secondary-button password-toggle delete-roster-btn"
-                type="button"
-                onClick={async () => {
-                  const target = rosters.find((r) => r.id === selectedRosterId);
-                  if (target) {
-                    await onDeleteRoster(target.id);
-                    setSelectedRosterId("");
-                  }
-                }}
-                disabled={isDeletingRoster}
-                title="Xóa file danh sách này khỏi hệ thống"
+            <div className="tools-group file-tools-group">
+              <select
+                className="roster-select"
+                value={selectedRosterId}
+                onChange={(event) => setSelectedRosterId(event.target.value)}
+                disabled={!rosters.length}
               >
-                {isDeletingRoster ? <LoaderCircle className="spin" size={17} /> : <Trash2 size={17} />}
-                <span>Xóa file</span>
+                <option value="">{rosters.length ? "Danh sách" : "Chưa có file danh sách"}</option>
+                {rosters.map((roster) => (
+                  <option key={roster.id} value={roster.id}>
+                    {getRosterDisplayLabel(roster, students)}
+                  </option>
+                ))}
+              </select>
+              <button
+                className="secondary-button export-result-btn"
+                type="button"
+                onClick={() => {
+                  if (!selectedRosterId) {
+                    setError("Vui lòng chọn một file trong ô 'Danh sách' trước khi xuất kết quả.");
+                    return;
+                  }
+                  onExportResults(selectedRosterId);
+                }}
+                disabled={!selectedRosterId || isExportingResults}
+                title={!selectedRosterId ? "Vui lòng chọn file trong ô 'Danh sách'" : "Xuất kết quả của file đã chọn"}
+              >
+                {isExportingResults ? <LoaderCircle className="spin" size={17} /> : <Download size={17} />}
+                <span>{isExportingResults ? "Đang xuất…" : "Xuất kết quả"}</span>
               </button>
-            )}
-            <button className="secondary-button password-toggle" type="button" onClick={() => setShowPasswords((shown) => !shown)}>
-              {showPasswords ? <EyeOff size={17} /> : <Eye size={17} />}
-              {showPasswords ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
-            </button>
-            <button className="secondary-button password-toggle" type="button" onClick={() => onResetPasswords()} disabled={isResettingPasswords || !students.length} title="Đặt lại mật khẩu ngẫu nhiên cho tất cả sinh viên và lưu vào hệ thống">
-              {isResettingPasswords ? <LoaderCircle className="spin" size={17} /> : <KeyRound size={17} />}
-              {isResettingPasswords ? "Đang cấp lại…" : "Cấp lại MK"}
-            </button>
-            <button
-              className="secondary-button password-toggle"
-              type="button"
-              onClick={() => {
-                if (!selectedRosterId) {
-                  setError("Vui lòng chọn một file trong ô 'Danh sách' trước khi xuất kết quả.");
-                  return;
-                }
-                onExportResults(selectedRosterId);
-              }}
-              disabled={!selectedRosterId || isExportingResults}
-              title={!selectedRosterId ? "Vui lòng chọn file trong ô 'Danh sách'" : "Xuất kết quả của file đã chọn"}
-            >
-              {isExportingResults ? <LoaderCircle className="spin" size={17} /> : <Download size={17} />}
-              {isExportingResults ? "Đang xuất…" : "Xuất kết quả"}
-            </button>
-            <button className="secondary-button password-toggle" type="button" onClick={onRefreshResults} disabled={isRefreshingResults}>
-              {isRefreshingResults ? <LoaderCircle className="spin" size={17} /> : <RotateCcw size={17} />}
-              {isRefreshingResults ? "Đang cập nhật…" : "Cập nhật điểm"}
-            </button>
+              {selectedRosterId && (
+                <button
+                  className="secondary-button delete-roster-btn"
+                  type="button"
+                  onClick={async () => {
+                    const target = rosters.find((r) => r.id === selectedRosterId);
+                    if (target) {
+                      await onDeleteRoster(target.id);
+                      setSelectedRosterId("");
+                    }
+                  }}
+                  disabled={isDeletingRoster}
+                  title="Xóa file danh sách này khỏi hệ thống"
+                >
+                  {isDeletingRoster ? <LoaderCircle className="spin" size={17} /> : <Trash2 size={17} />}
+                  <span>Xóa file</span>
+                </button>
+              )}
+            </div>
+            <div className="tools-group action-tools-group">
+              <button className="secondary-button password-toggle" type="button" onClick={() => setShowPasswords((shown) => !shown)}>
+                {showPasswords ? <EyeOff size={17} /> : <Eye size={17} />}
+                <span>{showPasswords ? "Ẩn mật khẩu" : "Hiện mật khẩu"}</span>
+              </button>
+              <button className="secondary-button password-toggle" type="button" onClick={() => onResetPasswords()} disabled={isResettingPasswords || !students.length} title="Đặt lại mật khẩu ngẫu nhiên cho tất cả sinh viên và lưu vào hệ thống">
+                {isResettingPasswords ? <LoaderCircle className="spin" size={17} /> : <KeyRound size={17} />}
+                <span>{isResettingPasswords ? "Đang cấp lại…" : "Cấp lại MK"}</span>
+              </button>
+              <button className="secondary-button password-toggle" type="button" onClick={onRefreshResults} disabled={isRefreshingResults}>
+                {isRefreshingResults ? <LoaderCircle className="spin" size={17} /> : <RotateCcw size={17} />}
+                <span>{isRefreshingResults ? "Đang cập nhật…" : "Cập nhật điểm"}</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -2720,13 +2724,29 @@ function StudyView({ study, currentWord, quizChoices, typingInputRef, isFullscre
       <div className="progress-line"><span style={{ width: `${progress}%` }} /></div>
       <div className="assigned-study-mode"><AssignedIcon size={18} /><span>Giảng viên đã giao</span><strong>{assignedMode.title}</strong></div>
       {!isFullscreen && (
-        <button className="fullscreen-required" type="button" onClick={onFullscreen}>
-          <Maximize2 size={19} />
-          <span>
-            <b>Vào toàn màn hình để tiếp tục</b>
-            <small>Thoát toàn màn hình khi đang làm: lần đầu trừ 25% điểm, lần hai trừ 75% điểm, lần ba hủy bài.</small>
-          </span>
-        </button>
+        <div className={`fullscreen-violation-alert ${study.violationCount > 0 ? "is-violated" : ""}`}>
+          <div className="alert-content">
+            <div className="alert-icon-wrap">
+              <CircleAlert size={22} />
+            </div>
+            <div className="alert-text">
+              <strong>
+                {study.violationCount > 0
+                  ? `⚠️ Cảnh báo vi phạm: Đã phạm lỗi ${study.violationCount} lần!`
+                  : "⚠️ Yêu cầu bật toàn màn hình khi làm bài"}
+              </strong>
+              <p>
+                {study.violationCount > 0
+                  ? `Bạn đã bị trừ ${study.violationCount === 1 ? "25%" : "75%"} điểm. Hãy bấm ô bên cạnh để bật lại toàn màn hình ngay.`
+                  : "Thoát toàn màn hình khi làm bài: lần đầu trừ 25% điểm, lần hai trừ 75% điểm, lần ba hủy bài thi (0 điểm)."}
+              </p>
+            </div>
+          </div>
+          <button className="enable-fullscreen-btn" type="button" onClick={onFullscreen}>
+            <Maximize2 size={18} />
+            <span>Bật toàn màn hình</span>
+          </button>
+        </div>
       )}
 
       {study.mode === "typing" && (

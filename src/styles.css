@@ -1235,9 +1235,218 @@ kbd { margin-left: 6px; padding: 3px 6px; border: 1px solid rgba(255,255,255,.14
   color: #8c2417;
   line-height: 1.4;
 }
-.roster-select { min-width: 220px; height: 40px; padding: 0 34px 0 13px; border: 1.5px solid var(--line); border-radius: 12px; color: #1c130c; background: #ffffff; font-size: .78rem; font-weight: 600; transition: all 0.2s ease; }
-.roster-select:focus { border-color: #8b4513; outline: none; box-shadow: 0 0 0 3px rgba(139, 69, 19, 0.12); }
-.roster-select:disabled { opacity: .55; }
+/* ==========================================================================
+   RESULT TOOLS & ROSTER ACTIONS (INSTRUCTOR VIEW)
+   ========================================================================== */
+.result-tools {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.tools-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.roster-select {
+  min-width: 260px;
+  max-width: 380px;
+  height: 42px;
+  padding: 0 34px 0 14px;
+  border: 1.5px solid rgba(139, 115, 85, 0.28);
+  border-radius: 12px;
+  color: #1c130c;
+  background: #ffffff;
+  font-size: 0.82rem;
+  font-weight: 650;
+  box-shadow: 0 2px 6px rgba(60, 40, 20, 0.04);
+  transition: all 0.2s ease;
+}
+
+.roster-select:focus {
+  border-color: #8b4513;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(139, 69, 19, 0.12);
+}
+
+.roster-select:disabled {
+  opacity: 0.55;
+}
+
+.result-tools .secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 42px;
+  min-height: 42px;
+  padding: 0 16px;
+  border: 1.5px solid rgba(139, 115, 85, 0.25);
+  border-radius: 12px;
+  background: #ffffff;
+  color: #3b2518;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(60, 40, 20, 0.04);
+  transition: all 0.18s ease;
+  white-space: nowrap;
+}
+
+.result-tools .secondary-button:hover:not(:disabled) {
+  border-color: #8b4513;
+  background: #fdfaf5;
+  color: #8b4513;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(139, 69, 19, 0.12);
+}
+
+.result-tools .delete-roster-btn {
+  color: #c0392b;
+  border-color: rgba(192, 57, 43, 0.3);
+  background: rgba(192, 57, 43, 0.04);
+}
+
+.result-tools .delete-roster-btn:hover:not(:disabled) {
+  background: rgba(192, 57, 43, 0.12);
+  border-color: #c0392b;
+  color: #a92317;
+}
+
+.result-tools .export-result-btn {
+  color: #1565c0;
+  border-color: rgba(21, 101, 192, 0.3);
+  background: rgba(21, 101, 192, 0.04);
+}
+
+.result-tools .export-result-btn:hover:not(:disabled) {
+  background: rgba(21, 101, 192, 0.12);
+  border-color: #1565c0;
+  color: #0d47a1;
+}
+
+/* ==========================================================================
+   FULLSCREEN VIOLATION & ENFORCEMENT BANNER (STUDY VIEW)
+   ========================================================================== */
+.fullscreen-violation-alert {
+  width: min(680px, 100%);
+  margin: 16px auto 20px;
+  padding: 16px 20px;
+  border-radius: 18px;
+  background: #ffffff;
+  border: 2px solid #e65100;
+  box-shadow: 0 8px 28px rgba(230, 81, 0, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  animation: enter 0.25s ease-out;
+}
+
+.fullscreen-violation-alert.is-violated {
+  border-color: #c0392b;
+  background: #fff8f6;
+  box-shadow: 0 8px 30px rgba(192, 57, 43, 0.18);
+}
+
+.fullscreen-violation-alert .alert-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  text-align: left;
+}
+
+.fullscreen-violation-alert .alert-icon-wrap {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  background: rgba(230, 81, 0, 0.12);
+  color: #e65100;
+}
+
+.fullscreen-violation-alert.is-violated .alert-icon-wrap {
+  background: rgba(192, 57, 43, 0.12);
+  color: #c0392b;
+}
+
+.fullscreen-violation-alert .alert-text strong {
+  display: block;
+  font-size: 0.92rem;
+  font-weight: 850;
+  color: #b73e00;
+  letter-spacing: -0.015em;
+}
+
+.fullscreen-violation-alert.is-violated .alert-text strong {
+  color: #c0392b;
+}
+
+.fullscreen-violation-alert .alert-text p {
+  margin: 4px 0 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #6d4c41;
+  line-height: 1.45;
+}
+
+.fullscreen-violation-alert.is-violated .alert-text p {
+  color: #8c2417;
+}
+
+.fullscreen-violation-alert .enable-fullscreen-btn {
+  flex-shrink: 0;
+  height: 44px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #c0392b, #8b0000);
+  color: #ffffff;
+  font-size: 0.85rem;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(192, 57, 43, 0.35);
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.fullscreen-violation-alert .enable-fullscreen-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(192, 57, 43, 0.45);
+  background: linear-gradient(135deg, #d32f2f, #a00000);
+}
+
+.fullscreen-violation-alert .enable-fullscreen-btn:active {
+  transform: translateY(0);
+}
+
+@media (max-width: 650px) {
+  .fullscreen-violation-alert {
+    flex-direction: column;
+    align-items: stretch;
+    text-align: center;
+  }
+  .fullscreen-violation-alert .alert-content {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+  .fullscreen-violation-alert .enable-fullscreen-btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
 .empty-students { display: flex; min-height: 160px; flex-direction: column; align-items: center; justify-content: center; color: var(--muted); text-align: center; padding: 24px; }
 .empty-students svg { margin-bottom: 12px; color: #1565c0; }
 .empty-students strong { color: var(--ink-strong); font-size: .95rem; }
@@ -1260,10 +1469,11 @@ kbd { margin-left: 6px; padding: 3px 6px; border: 1px solid rgba(255,255,255,.14
   .student-count { width: 100%; }
   .teacher-grid { margin-top: 18px; }
   .generator-fields { grid-template-columns: 1fr; }
-  .table-title { align-items: flex-start; flex-direction: column; }
+  .table-title { align-items: flex-start; flex-direction: column; gap: 14px; }
   .password-toggle { width: 100%; }
-  .result-tools { width: 100%; display: grid; grid-template-columns: 1fr 1fr; }
-  .roster-select { grid-column: 1 / -1; width: 100%; }
+  .result-tools { width: 100%; align-items: stretch; gap: 10px; }
+  .tools-group { width: 100%; justify-content: stretch; }
+  .tools-group .secondary-button, .tools-group .roster-select { flex: 1 1 auto; }
 }
 
 @media (max-width: 430px) {
