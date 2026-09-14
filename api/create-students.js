@@ -187,7 +187,7 @@ export default async function handler(request, response) {
 
   const uniqueClasses = [...new Set(students.map((student) => student.className))];
   const className = uniqueClasses.length === 1 ? uniqueClasses[0] : `${uniqueClasses.length} lớp`;
-  const { data: roster, error: rosterError } = await admin.from("student_rosters").insert({
+  const rosterPayload = {
     instructor_id: userData.user.id,
     class_name: className,
     original_file_name: workbook.originalFileName,
@@ -198,10 +198,36 @@ export default async function handler(request, response) {
     name_column: workbook.nameColumn,
     class_column: workbook.classColumn,
     student_count: students.length,
-  }).select("id,class_name,original_file_name,sheet_name,student_count,created_at").single();
+  };
+
+  let roster = null;
+  let rosterError = null;
+
+  const { data: userRoster, error: userRosterError } = await userClient
+    .from("student_rosters")
+    .insert(rosterPayload)
+    .select("id,class_name,original_file_name,sheet_name,student_count,created_at")
+    .single();
+
+  if (userRoster) {
+    roster = userRoster;
+  } else {
+    const { data: adminRoster, error: adminRosterError } = await admin
+      .from("student_rosters")
+      .insert(rosterPayload)
+      .select("id,class_name,original_file_name,sheet_name,student_count,created_at")
+      .single();
+
+    if (adminRoster) {
+      roster = adminRoster;
+    } else {
+      rosterError = adminRosterError || userRosterError;
+    }
+  }
+
   if (rosterError || !roster) {
-    console.error("create-students roster", rosterError);
-    return response.status(500).json({ error: `Chưa lưu được file danh sách: ${rosterError?.message || "Hãy chạy bản cập nhật Supabase mới nhất."}` });
+    console.error("create-students roster", { userRosterError, rosterError });
+    return response.status(500).json({ error: `Chưa lưu được file danh sách: ${rosterError?.message || "Lỗi quyền truy cập bảng student_rosters."}` });
   }
 
   const accounts = [];
