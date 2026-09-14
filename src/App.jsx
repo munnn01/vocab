@@ -17,6 +17,7 @@ import {
   parseStudentRosterXlsx,
 } from "./lib/studentAccounts";
 import { BookBackground } from "./components/BookBackground";
+import { LoginCat } from "./components/LoginCat";
 
 const DEMO_DECK = {
   id: "demo",
@@ -1070,6 +1071,7 @@ function LoginView({ onLogin }) {
         </button>
       ) : (
         <div className="login-centered-container">
+          <LoginCat />
           <form className="login-card centered-card" onSubmit={submit}>
             <div className="login-card-top-bar" style={{ justifyContent: "flex-end" }}>
               <button

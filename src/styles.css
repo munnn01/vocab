@@ -104,9 +104,32 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 .deck-icon.coral { background: var(--coral); }
 .deck-icon.blue { background: var(--blue); }
 .upload-mini { display: flex; width: 100%; align-items: center; justify-content: center; gap: 8px; margin-top: 18px; padding: 11px; border: 1px dashed rgba(184, 134, 11, .4); border-radius: 12px; color: var(--lime); background: rgba(184, 134, 11, .06); cursor: pointer; font-size: .82rem; font-weight: 700; }
-.upload-mini:hover { background: rgba(199,255,85,.09); }
-.format-tip { margin: 13px 0 0; color: var(--muted); text-align: center; font-size: .7rem; line-height: 1.6; }
-.format-tip code { color: #cfd8ef; font-family: "Cascadia Code", monospace; }
+.format-tip {
+  margin: 14px 0 0;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid rgba(139, 115, 85, 0.22);
+  color: #3b2518;
+  text-align: center;
+  font-size: 0.76rem;
+  line-height: 1.55;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(60, 40, 20, 0.06);
+}
+.format-tip code {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  background: rgba(184, 134, 11, 0.12);
+  border: 1px solid rgba(184, 134, 11, 0.35);
+  color: #8b4513;
+  font-family: "Cascadia Code", "Fira Code", monospace;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
 
 .content-stage { width: min(970px, calc(100% - 54px)); margin: 0 auto; padding: 48px 0 38px; }
 .home-view, .import-view, .study-view, .result-view { animation: enter .3s ease-out; }
@@ -753,6 +776,179 @@ kbd { margin-left: 6px; padding: 3px 6px; border: 1px solid rgba(255,255,255,.14
   background: #8b4513;
   color: #ffffff;
   transform: translateY(-2px);
+}
+
+/* ==========================================================================
+   ANIMATED BLACK CAT PATROL (RUNNING BACK AND FORTH OVER LOGIN CARD)
+   ========================================================================== */
+.login-cat-patrol-area {
+  position: absolute;
+  top: -33px;
+  left: 16px;
+  right: 16px;
+  height: 38px;
+  pointer-events: none;
+  z-index: 35;
+}
+
+.pixel-black-cat {
+  position: absolute;
+  bottom: 0;
+  width: 48px;
+  height: 38px;
+  cursor: pointer;
+  pointer-events: auto;
+  animation: catPatrolWalk 11s ease-in-out infinite;
+  transform-origin: center bottom;
+  user-select: none;
+}
+
+.pixel-black-cat:hover {
+  filter: drop-shadow(0 0 8px rgba(251, 191, 36, 0.5));
+}
+
+.pixel-black-cat:active {
+  transform: scale(0.92);
+}
+
+.cat-svg {
+  display: block;
+  overflow: visible;
+  animation: catBobbing 0.28s ease-in-out infinite alternate;
+  transform-origin: center bottom;
+}
+
+/* Walking cycle back and forth across login card */
+@keyframes catPatrolWalk {
+  0% {
+    left: 0%;
+    transform: scaleX(1);
+  }
+  44% {
+    left: calc(100% - 48px);
+    transform: scaleX(1);
+  }
+  48% {
+    left: calc(100% - 48px);
+    transform: scaleX(-1);
+  }
+  50% {
+    left: calc(100% - 48px);
+    transform: scaleX(-1);
+  }
+  94% {
+    left: 0%;
+    transform: scaleX(-1);
+  }
+  98% {
+    left: 0%;
+    transform: scaleX(1);
+  }
+  100% {
+    left: 0%;
+    transform: scaleX(1);
+  }
+}
+
+/* Cat body subtle trot bob */
+@keyframes catBobbing {
+  0% {
+    transform: translateY(0);
+  }
+  100% {
+    transform: translateY(-2px);
+  }
+}
+
+/* Paws / Legs Alternating Trot */
+.cat-leg-wrap {
+  transform-origin: 50% 26px;
+}
+
+.cat-leg-front-right,
+.cat-leg-back-left {
+  animation: catLegStepForward 0.28s ease-in-out infinite alternate;
+}
+
+.cat-leg-front-left,
+.cat-leg-back-right {
+  animation: catLegStepBackward 0.28s ease-in-out infinite alternate;
+}
+
+@keyframes catLegStepForward {
+  0% {
+    transform: rotate(-16deg);
+  }
+  100% {
+    transform: rotate(16deg);
+  }
+}
+
+@keyframes catLegStepBackward {
+  0% {
+    transform: rotate(16deg);
+  }
+  100% {
+    transform: rotate(-16deg);
+  }
+}
+
+/* Tail Gentle Swish */
+.cat-tail-group {
+  transform-origin: 13px 24px;
+  animation: catTailSwish 0.56s ease-in-out infinite alternate;
+}
+
+@keyframes catTailSwish {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(14deg);
+  }
+}
+
+/* Speech bubble when clicked */
+.cat-speech-bubble {
+  position: absolute;
+  top: -24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #ffffff;
+  color: #1c130c;
+  font-family: "Be Vietnam Pro", sans-serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(139, 115, 85, 0.35);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  white-space: nowrap;
+  pointer-events: none;
+  animation: bubblePop 0.25s ease-out;
+  z-index: 50;
+}
+
+.cat-speech-bubble::after {
+  content: "";
+  position: absolute;
+  bottom: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 4px 4px 0;
+  border-style: solid;
+  border-color: #ffffff transparent;
+}
+
+@keyframes bubblePop {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(4px) scale(0.8);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
 }
 
 .login-card.centered-card {
