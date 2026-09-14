@@ -87,7 +87,7 @@ export async function loadStudents() {
   const user = await requireUser();
   const { data, error } = await supabase
     .from("profiles")
-    .select("user_id,username,display_name,class_name,created_at")
+    .select("user_id,username,display_name,class_name,roster_id,roster_row,created_at")
     .eq("instructor_id", user.id)
     .order("created_at", { ascending: false });
   if (error) throw error;
@@ -96,15 +96,56 @@ export async function loadStudents() {
     username: student.username,
     displayName: student.display_name,
     className: student.class_name,
+    rosterId: student.roster_id,
+    rosterRow: student.roster_row,
     createdAt: student.created_at,
   }));
+}
+
+export async function loadRosters() {
+  const user = await requireUser();
+  const { data, error } = await supabase
+    .from("student_rosters")
+    .select("id,class_name,original_file_name,sheet_name,student_count,created_at")
+    .eq("instructor_id", user.id)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data || []).map((roster) => ({
+    id: roster.id,
+    className: roster.class_name,
+    originalFileName: roster.original_file_name,
+    sheetName: roster.sheet_name,
+    studentCount: roster.student_count,
+    createdAt: roster.created_at,
+  }));
+}
+
+export async function loadRosterWorkbook(rosterId) {
+  const user = await requireUser();
+  const { data, error } = await supabase
+    .from("student_rosters")
+    .select("id,original_file_name,original_file_base64,sheet_name,worksheet_path,header_row,name_column,class_column")
+    .eq("id", rosterId)
+    .eq("instructor_id", user.id)
+    .single();
+  if (error) throw error;
+  return {
+    id: data.id,
+    originalFileName: data.original_file_name,
+    originalFileBase64: data.original_file_base64,
+    sheetName: data.sheet_name,
+    worksheetPath: data.worksheet_path,
+    headerRow: data.header_row,
+    nameColumn: data.name_column,
+    classColumn: data.class_column,
+  };
 }
 
 export async function loadStudentResults() {
   const user = await requireUser();
   const { data, error } = await supabase
     .from("study_sessions")
-    .select("id,owner_id,deck_id,mode,score,correct_count,total_count,completed,created_at,decks(title)")
+    .select("id,owner_id,deck_id,mode,score,correct_count,total_count,completed,violation_reason,created_at,decks(title)")
     .neq("owner_id", user.id)
     .order("created_at", { ascending: false })
     .limit(500);
@@ -121,11 +162,12 @@ export async function loadStudentResults() {
     correct: session.correct_count,
     total: session.total_count,
     completed: session.completed,
+    violationReason: session.violation_reason,
     completedAt: session.created_at,
   }));
 }
 
-export async function createStudentAccounts({ className, prefix, count }) {
+export async function createStudentAccounts({ students, workbook }) {
   const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
   if (sessionError || !sessionData.session) throw new Error("Phiên đăng nhập đã hết hạn.");
   const response = await fetch("/api/create-students", {
@@ -134,11 +176,11 @@ export async function createStudentAccounts({ className, prefix, count }) {
       "Content-Type": "application/json",
       Authorization: `Bearer ${sessionData.session.access_token}`,
     },
-    body: JSON.stringify({ className, prefix, count }),
+    body: JSON.stringify({ students, workbook }),
   });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(result.error || "Không thể tạo tài khoản sinh viên.");
-  return result.accounts;
+  return result;
 }
 
 function toClientWord(word) {
@@ -241,7 +283,7 @@ export async function updateDeckPracticeMode(deckId, practiceMode) {
   if (error) throw error;
 }
 
-export async function saveStudySession({ deckId, mode, score, correct, total, completed }) {
+export async function saveStudySession({ deckId, mode, score, correct, total, completed, violationReason = null }) {
   if (!supabase || deckId === "demo") return;
   const user = await requireUser();
   const { error } = await supabase.from("study_sessions").insert({
@@ -252,6 +294,7 @@ export async function saveStudySession({ deckId, mode, score, correct, total, co
     correct_count: correct,
     total_count: total,
     completed,
+    violation_reason: violationReason,
   });
   if (error) throw error;
 }

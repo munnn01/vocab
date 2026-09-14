@@ -393,6 +393,18 @@ kbd { margin-left: 6px; padding: 3px 6px; border: 1px solid rgba(255,255,255,.14
 .generator-fields { display: grid; grid-template-columns: 1fr 120px; gap: 10px; margin-top: 12px; }
 .generator-fields label > span { display: block; margin: 0 0 8px; color: var(--muted); font-size: .7rem; font-weight: 700; }
 .generator-submit { width: 100%; margin-top: 16px; }
+.roster-drop { width: 100%; min-height: 96px; display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 14px; padding: 17px; border: 1px dashed rgba(120,166,255,.38); border-radius: 14px; color: var(--blue); text-align: left; background: rgba(120,166,255,.055); cursor: pointer; }
+.roster-drop:hover { border-color: var(--blue); background: rgba(120,166,255,.09); }
+.roster-drop.ready { border-style: solid; border-color: rgba(199,255,85,.34); color: var(--lime); background: rgba(199,255,85,.055); }
+.roster-drop:disabled { cursor: wait; opacity: .72; }
+.roster-drop span, .roster-drop b, .roster-drop small { display: block; }
+.roster-drop b { color: var(--ink); font-size: .8rem; }
+.roster-drop small { margin-top: 5px; color: var(--muted); font-size: .68rem; line-height: 1.45; }
+.fallback-class { display: block; margin-top: 14px; }
+.fallback-class > span { display: block; margin-bottom: 8px; color: #f5d994; font-size: .7rem; font-weight: 750; }
+.roster-preview { display: grid; gap: 5px; margin-top: 13px; padding: 11px 13px; border: 1px solid var(--line); border-radius: 11px; background: rgba(255,255,255,.025); }
+.roster-preview span { color: var(--muted); font-size: .64rem; text-transform: uppercase; letter-spacing: .07em; }
+.roster-preview b { color: #dfe6f7; font-size: .7rem; line-height: 1.5; }
 .export-panel { display: flex; flex-direction: column; align-items: flex-start; padding: 23px; }
 .export-icon { display: grid; place-items: center; width: 47px; aspect-ratio: 1; margin-bottom: auto; border: 1px solid rgba(120,166,255,.25); border-radius: 13px; color: var(--blue); background: rgba(120,166,255,.08); }
 .export-panel .eyebrow { margin-top: 30px; }
@@ -411,13 +423,17 @@ kbd { margin-left: 6px; padding: 3px 6px; border: 1px solid rgba(255,255,255,.14
 .student-table td { height: 46px; padding: 0 12px; border-top: 1px solid var(--line); color: #cad1e3; font-size: .76rem; }
 .student-table tbody tr:hover { background: rgba(255,255,255,.025); }
 .student-table code { color: var(--lime); font-family: "Cascadia Code", monospace; font-size: .72rem; }
-.result-table { min-width: 860px; }
+.result-table { min-width: 1040px; }
 .result-table td strong, .result-table td small { display: block; }
 .result-table td small { max-width: 220px; margin-top: 4px; overflow: hidden; color: var(--muted); font-size: .64rem; text-overflow: ellipsis; white-space: nowrap; }
 .score-badge, .no-result { display: inline-flex; align-items: center; min-height: 29px; padding: 0 9px; border-radius: 8px; font-size: .7rem; font-weight: 800; white-space: nowrap; }
 .score-badge { color: #11172a; background: var(--lime); }
 .score-badge.left-early { color: #ffe0da; background: rgba(255,112,94,.18); }
 .no-result { color: var(--muted); background: rgba(255,255,255,.055); }
+.issue-badge { display: inline-flex; min-height: 28px; align-items: center; padding: 0 9px; border-radius: 8px; color: #ffc1b7; background: rgba(255,112,94,.12); font-size: .68rem; font-weight: 750; white-space: nowrap; }
+.result-tools { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.roster-select { min-width: 220px; height: 38px; padding: 0 34px 0 11px; border: 1px solid var(--line); border-radius: 10px; color: #dce3f3; background: #151d35; font-size: .7rem; }
+.roster-select:disabled { opacity: .55; }
 .empty-students { display: flex; min-height: 155px; flex-direction: column; align-items: center; justify-content: center; color: var(--muted); text-align: center; }
 .empty-students svg { margin-bottom: 12px; color: var(--blue); }
 .empty-students strong { color: var(--ink); font-size: .86rem; }
@@ -449,6 +465,8 @@ kbd { margin-left: 6px; padding: 3px 6px; border: 1px solid rgba(255,255,255,.14
   .generator-fields { grid-template-columns: 1fr; }
   .table-title { align-items: flex-start; flex-direction: column; }
   .password-toggle { width: 100%; }
+  .result-tools { width: 100%; display: grid; grid-template-columns: 1fr 1fr; }
+  .roster-select { grid-column: 1 / -1; width: 100%; }
 }
 
 @media (max-width: 430px) {

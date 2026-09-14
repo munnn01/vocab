@@ -5,6 +5,8 @@ const USERNAME_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
 const PASSWORD_LOWER = "abcdefghjkmnpqrstuvwxyz";
 const PASSWORD_UPPER = "ABCDEFGHJKMNPQRSTUVWXYZ";
 const PASSWORD_DIGITS = "23456789";
+const MAX_STUDENTS = 100;
+const MAX_BASE64_LENGTH = 3_500_000;
 
 function normalizePrefix(value) {
   return String(value || "")
@@ -37,17 +39,49 @@ function makePassword() {
   return characters.join("");
 }
 
-async function createOneStudent(admin, instructor, className, prefix, index) {
+function cleanWorkbook(value) {
+  const workbook = value && typeof value === "object" ? value : {};
+  const originalFileName = String(workbook.originalFileName || "").trim().slice(0, 180);
+  const originalFileBase64 = String(workbook.originalFileBase64 || "");
+  const sheetName = String(workbook.sheetName || "").trim().slice(0, 120);
+  const worksheetPath = String(workbook.worksheetPath || "").trim().slice(0, 240);
+  const headerRow = Number(workbook.headerRow);
+  const nameColumn = Number(workbook.nameColumn);
+  const classColumn = workbook.classColumn == null ? null : Number(workbook.classColumn);
+  if (!/\.xlsx$/i.test(originalFileName)) throw new Error("Tên file danh sách không hợp lệ.");
+  if (!originalFileBase64 || originalFileBase64.length > MAX_BASE64_LENGTH) throw new Error("File Excel vượt quá dung lượng cho phép.");
+  if (!sheetName || !/^xl\/worksheets\/[a-z0-9_.-]+\.xml$/i.test(worksheetPath)) throw new Error("Thông tin trang tính không hợp lệ.");
+  if (!Number.isInteger(headerRow) || headerRow < 1 || !Number.isInteger(nameColumn) || nameColumn < 1) throw new Error("Vị trí cột Họ và tên không hợp lệ.");
+  if (classColumn != null && (!Number.isInteger(classColumn) || classColumn < 1)) throw new Error("Vị trí cột Lớp không hợp lệ.");
+  return { originalFileName, originalFileBase64, sheetName, worksheetPath, headerRow, nameColumn, classColumn };
+}
+
+function cleanStudents(value) {
+  if (!Array.isArray(value) || value.length < 1 || value.length > MAX_STUDENTS) {
+    throw new Error(`Danh sách phải có từ 1 đến ${MAX_STUDENTS} sinh viên.`);
+  }
+  return value.map((student) => {
+    const displayName = String(student?.displayName || "").trim().slice(0, 120);
+    const className = String(student?.className || "").trim().slice(0, 80);
+    const rowNumber = Number(student?.rowNumber);
+    if (!displayName || !className || !Number.isInteger(rowNumber) || rowNumber < 2) {
+      throw new Error("Mỗi sinh viên cần có họ tên, lớp và dòng tương ứng trong file Excel.");
+    }
+    return { displayName, className, rowNumber };
+  });
+}
+
+async function createOneStudent(admin, instructor, rosterId, student) {
+  const prefix = normalizePrefix(student.className);
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const username = `${prefix}-${randomText(USERNAME_ALPHABET, 6)}`;
     const password = makePassword();
-    const displayName = `Sinh viên ${String(index + 1).padStart(2, "0")}`;
     const email = `${username}@students.vocab.local`;
     const { data, error } = await admin.auth.admin.createUser({
       email,
       password,
       email_confirm: true,
-      user_metadata: { display_name: displayName, username },
+      user_metadata: { display_name: student.displayName, username },
     });
     if (error?.message?.toLowerCase().includes("already")) continue;
     if (error || !data.user) throw error || new Error("Không tạo được người dùng Supabase.");
@@ -56,15 +90,25 @@ async function createOneStudent(admin, instructor, className, prefix, index) {
       user_id: data.user.id,
       role: "student",
       username,
-      display_name: displayName,
+      display_name: student.displayName,
       instructor_id: instructor.id,
-      class_name: className,
+      class_name: student.className,
+      roster_id: rosterId,
+      roster_row: student.rowNumber,
     });
     if (profileError) {
       await admin.auth.admin.deleteUser(data.user.id);
       throw profileError;
     }
-    return { id: data.user.id, username, password, displayName, className };
+    return {
+      id: data.user.id,
+      username,
+      password,
+      displayName: student.displayName,
+      className: student.className,
+      rosterId,
+      rosterRow: student.rowNumber,
+    };
   }
   throw new Error("Không thể tạo tên đăng nhập duy nhất. Hãy thử lại.");
 }
@@ -89,26 +133,59 @@ export default async function handler(request, response) {
   const { data: profile, error: profileError } = await admin.from("profiles").select("role").eq("user_id", userData.user.id).single();
   if (profileError || profile?.role !== "instructor") return response.status(403).json({ error: "Chỉ giảng viên mới được tạo tài khoản sinh viên." });
 
-  const className = String(request.body?.className || "").trim().slice(0, 80);
-  const prefix = normalizePrefix(request.body?.prefix || className);
-  const count = Number(request.body?.count);
-  if (!className) return response.status(400).json({ error: "Hãy nhập tên lớp." });
-  if (!Number.isInteger(count) || count < 1 || count > 50) return response.status(400).json({ error: "Số lượng sinh viên phải từ 1 đến 50." });
+  let workbook;
+  let students;
+  try {
+    workbook = cleanWorkbook(request.body?.workbook);
+    students = cleanStudents(request.body?.students);
+  } catch (error) {
+    return response.status(400).json({ error: error.message });
+  }
+
+  const uniqueClasses = [...new Set(students.map((student) => student.className))];
+  const className = uniqueClasses.length === 1 ? uniqueClasses[0] : `${uniqueClasses.length} lớp`;
+  const { data: roster, error: rosterError } = await admin.from("student_rosters").insert({
+    instructor_id: userData.user.id,
+    class_name: className,
+    original_file_name: workbook.originalFileName,
+    original_file_base64: workbook.originalFileBase64,
+    sheet_name: workbook.sheetName,
+    worksheet_path: workbook.worksheetPath,
+    header_row: workbook.headerRow,
+    name_column: workbook.nameColumn,
+    class_column: workbook.classColumn,
+    student_count: students.length,
+  }).select("id,class_name,original_file_name,sheet_name,student_count,created_at").single();
+  if (rosterError || !roster) {
+    console.error("create-students roster", rosterError);
+    return response.status(500).json({ error: "Chưa lưu được file danh sách. Hãy chạy bản cập nhật Supabase mới nhất." });
+  }
 
   const accounts = [];
   try {
-    for (let start = 0; start < count; start += 5) {
-      const batch = Array.from({ length: Math.min(5, count - start) }, (_, offset) =>
-        createOneStudent(admin, userData.user, className, prefix, start + offset));
+    for (let start = 0; start < students.length; start += 5) {
+      const batch = students.slice(start, start + 5).map((student) =>
+        createOneStudent(admin, userData.user, roster.id, student));
       const results = await Promise.allSettled(batch);
       accounts.push(...results.filter((result) => result.status === "fulfilled").map((result) => result.value));
       const failed = results.find((result) => result.status === "rejected");
       if (failed) throw failed.reason;
     }
-    return response.status(201).json({ accounts });
+    return response.status(201).json({
+      accounts,
+      roster: {
+        id: roster.id,
+        className: roster.class_name,
+        originalFileName: roster.original_file_name,
+        sheetName: roster.sheet_name,
+        studentCount: roster.student_count,
+        createdAt: roster.created_at,
+      },
+    });
   } catch (error) {
     await Promise.allSettled(accounts.map((account) => admin.auth.admin.deleteUser(account.id)));
-    console.error("create-students", error);
+    await admin.from("student_rosters").delete().eq("id", roster.id);
+    console.error("create-students accounts", error);
     return response.status(500).json({ error: error?.message || "Không thể tạo tài khoản sinh viên." });
   }
 }

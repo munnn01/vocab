@@ -1,17 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft, BookOpen, BrainCircuit, Check, ChevronRight, CircleAlert, FileText,
-  Download, Eye, EyeOff, FileUp, Flame, GraduationCap, Keyboard, Layers3,
+  Download, Eye, EyeOff, FileSpreadsheet, FileUp, Flame, GraduationCap, Keyboard, Layers3,
   LoaderCircle, LogOut, Maximize2, Minimize2, Plus,
   RotateCcw, ShieldCheck, Sparkles, Trash2, Trophy, UserPlus, Users, X,
 } from "lucide-react";
 import { DEMO_WORDS, POS_LABELS, makeQuizChoices, normalizeAnswer, shuffle } from "./lib/vocabulary";
 import {
   createDeck, createStudentAccounts, getCurrentAccount, isSupabaseConfigured,
-  loadLibrary, loadStudentResults, loadStudents, saveStudySession, signIn, signOut,
+  loadLibrary, loadRosterWorkbook, loadRosters, loadStudentResults, loadStudents,
+  saveStudySession, signIn, signOut,
   updateDeckPracticeMode,
 } from "./lib/supabase";
-import { createDemoStudentAccounts, downloadStudentAccountsXlsx } from "./lib/studentAccounts";
+import {
+  createDemoStudentAccounts, downloadRosterCredentialsXlsx, downloadRosterResultsXlsx,
+  parseStudentRosterXlsx,
+} from "./lib/studentAccounts";
 
 const DEMO_DECK = {
   id: "demo",
@@ -55,10 +59,13 @@ export function App() {
   const [decks, setDecks] = useState([DEMO_DECK]);
   const [sessions, setSessions] = useState([]);
   const [students, setStudents] = useState([]);
+  const [rosters, setRosters] = useState([]);
   const [studentResults, setStudentResults] = useState([]);
   const [generatedAccounts, setGeneratedAccounts] = useState([]);
+  const [generatedRoster, setGeneratedRoster] = useState(null);
   const [isGeneratingAccounts, setIsGeneratingAccounts] = useState(false);
   const [isRefreshingResults, setIsRefreshingResults] = useState(false);
+  const [isExportingResults, setIsExportingResults] = useState(false);
   const [isUpdatingMode, setIsUpdatingMode] = useState(false);
   const [selectedDeckId, setSelectedDeckId] = useState("demo");
   const [connection, setConnection] = useState(isSupabaseConfigured ? "connecting" : "demo");
@@ -117,12 +124,14 @@ export function App() {
       loadLibrary(),
       account.role === "instructor" ? loadStudents() : Promise.resolve([]),
       account.role === "instructor" ? loadStudentResults() : Promise.resolve([]),
-    ]).then(([library, studentList, resultList]) => {
+      account.role === "instructor" ? loadRosters() : Promise.resolve([]),
+    ]).then(([library, studentList, resultList, rosterList]) => {
       if (!active) return;
       setDecks([DEMO_DECK, ...library.decks]);
       setSessions(library.sessions);
       setStudents(studentList);
       setStudentResults(resultList);
+      setRosters(rosterList);
       if (library.decks[0]) setSelectedDeckId(library.decks[0].id);
       setConnection("connected");
     }).catch((error) => {
@@ -226,7 +235,7 @@ export function App() {
     return () => lifecycle.abort();
   }, [account?.role, selectedDeck, startStudy]);
 
-  const finishStudy = useCallback((finalStudy, completed = true) => {
+  const finishStudy = useCallback((finalStudy, completed = true, violationReason = null) => {
     suppressFullscreenPenaltyRef.current = true;
     fullscreenSeenRef.current = false;
     if (document.fullscreenElement) {
@@ -241,6 +250,7 @@ export function App() {
       correct: finalStudy.correct,
       total: finalStudy.items.length,
       completed,
+      violationReason,
     };
     setLastResult(result);
     if (completed) setView("results");
@@ -253,6 +263,7 @@ export function App() {
       correct: finalStudy.correct,
       total: finalStudy.items.length,
       completed,
+      violationReason,
     }).then(() => {
       if (finalStudy.deckId !== "demo") {
         setSessions((current) => [{
@@ -262,6 +273,7 @@ export function App() {
           correct_count: finalStudy.correct,
           total_count: finalStudy.items.length,
           completed,
+          violation_reason: violationReason,
           created_at: new Date().toISOString(),
         }, ...current]);
       }
@@ -280,7 +292,7 @@ export function App() {
       if (!fullscreenSeenRef.current || suppressFullscreenPenaltyRef.current) return;
       fullscreenSeenRef.current = false;
       window.clearTimeout(answerTimerRef.current);
-      finishStudy({ ...study, score: study.score - 5 }, false);
+      finishStudy({ ...study, score: study.score - 5 }, false, "fullscreen_exit");
       setLeaveDialog(false);
       setView("home");
       showToast("Đã thoát toàn màn hình: trừ 5 điểm và kết thúc bài.");
@@ -399,7 +411,7 @@ export function App() {
     if (!study) return;
     window.clearTimeout(answerTimerRef.current);
     const penalized = { ...study, score: study.score - 5 };
-    finishStudy(penalized, false);
+    finishStudy(penalized, false, "left_early");
     setLeaveDialog(false);
     setView("home");
     showToast("Đã rời phiên sớm: trừ 5 điểm.");
@@ -440,6 +452,7 @@ export function App() {
     setAccount(loggedInAccount);
     setView("home");
     setGeneratedAccounts([]);
+    setGeneratedRoster(null);
   }
 
   async function handleSignOut() {
@@ -452,8 +465,10 @@ export function App() {
     setDecks([DEMO_DECK]);
     setSessions([]);
     setStudents([]);
+    setRosters([]);
     setStudentResults([]);
     setGeneratedAccounts([]);
+    setGeneratedRoster(null);
     setSelectedDeckId("demo");
     setView("home");
   }
@@ -461,10 +476,23 @@ export function App() {
   async function handleGenerateStudents(values) {
     setIsGeneratingAccounts(true);
     try {
-      const accounts = account.demo
-        ? createDemoStudentAccounts(values)
+      const result = account.demo
+        ? {
+            accounts: createDemoStudentAccounts(values),
+            roster: {
+              id: "demo-roster",
+              className: [...new Set(values.students.map((student) => student.className))].join(", "),
+              originalFileName: values.workbook.originalFileName,
+              sheetName: values.workbook.sheetName,
+              studentCount: values.students.length,
+              createdAt: new Date().toISOString(),
+            },
+          }
         : await createStudentAccounts(values);
+      const { accounts, roster } = result;
       setGeneratedAccounts(accounts);
+      setGeneratedRoster({ ...values.workbook, id: roster.id });
+      setRosters((current) => [roster, ...current.filter((item) => item.id !== roster.id)]);
       setStudents((current) => {
         const next = accounts.map(({ password: _password, ...student }) => student);
         const ids = new Set(next.map((student) => student.id));
@@ -478,15 +506,49 @@ export function App() {
   }
 
   function handleExportStudents() {
-    if (!generatedAccounts.length) {
+    if (!generatedAccounts.length || !generatedRoster) {
       showToast("Hãy tạo một đợt tài khoản mới trước khi xuất Excel.");
       return;
     }
-    downloadStudentAccountsXlsx(generatedAccounts, {
-      className: generatedAccounts[0].className,
-      loginUrl: window.location.origin,
-    });
-    showToast("Đã tải file Excel chứa tài khoản sinh viên.");
+    downloadRosterCredentialsXlsx(generatedRoster, generatedAccounts);
+    showToast("Đã tải chính file danh sách với cột tên đăng nhập và mật khẩu.");
+  }
+
+  async function handleExportRosterResults(rosterId) {
+    if (!rosterId) {
+      showToast("Hãy chọn danh sách cần xuất kết quả.");
+      return;
+    }
+    setIsExportingResults(true);
+    try {
+      const workbook = account.demo && generatedRoster?.id === rosterId
+        ? generatedRoster
+        : await loadRosterWorkbook(rosterId);
+      const latestResults = account.demo ? studentResults : await loadStudentResults();
+      if (!account.demo) setStudentResults(latestResults);
+      const latestByStudent = new Map();
+      for (const result of latestResults) {
+        if (!latestByStudent.has(result.studentId)) latestByStudent.set(result.studentId, result);
+      }
+      const resultRows = students
+        .filter((student) => student.rosterId === rosterId && student.rosterRow)
+        .map((student) => {
+          const result = latestByStudent.get(student.id);
+          let issue = "Chưa làm";
+          if (result?.completed) issue = "Không";
+          else if (result?.violationReason === "fullscreen_exit") issue = "Có – thoát toàn màn hình";
+          else if (result) issue = "Có – rời bài sớm";
+          return { rowNumber: student.rosterRow, score: result?.score ?? "", issue };
+        });
+      if (!resultRows.length) throw new Error("Không tìm thấy sinh viên thuộc danh sách này.");
+      downloadRosterResultsXlsx(workbook, resultRows);
+      showToast("Đã xuất file gốc với cột Điểm và Lỗi trong quá trình làm bài.");
+    } catch (error) {
+      console.error("Không thể xuất kết quả vào file gốc", error);
+      showToast(error.message || "Chưa xuất được file kết quả.");
+    } finally {
+      setIsExportingResults(false);
+    }
   }
 
   async function handleRefreshStudentResults() {
@@ -583,7 +645,7 @@ export function App() {
 
         <section className="content-stage">
           {view === "home" && <HomeView deck={selectedDeck} canManage={canManage} isImporting={isImporting} isUpdatingMode={isUpdatingMode} importProgress={importProgress} onPickPdf={() => fileInputRef.current?.click()} onStart={startStudy} onModeChange={handleDeckPracticeMode} />}
-          {view === "students" && canManage && <InstructorView students={students} studentResults={studentResults} generatedAccounts={generatedAccounts} isGenerating={isGeneratingAccounts} isRefreshingResults={isRefreshingResults} isDemo={Boolean(account.demo)} onGenerate={handleGenerateStudents} onExport={handleExportStudents} onRefreshResults={handleRefreshStudentResults} />}
+          {view === "students" && canManage && <InstructorView students={students} rosters={rosters} studentResults={studentResults} generatedAccounts={generatedAccounts} isGenerating={isGeneratingAccounts} isRefreshingResults={isRefreshingResults} isExportingResults={isExportingResults} isDemo={Boolean(account.demo)} onGenerate={handleGenerateStudents} onExport={handleExportStudents} onExportResults={handleExportRosterResults} onRefreshResults={handleRefreshStudentResults} />}
           {view === "import" && importDraft && <ImportView draft={importDraft} isSaving={isSaving} connection={connection} onBack={() => setView("home")} onChangeTitle={(title) => setImportDraft((draft) => ({ ...draft, title }))} onChangePracticeMode={(practiceMode) => setImportDraft((draft) => ({ ...draft, practiceMode }))} onRemoveWord={removeDraftWord} onSave={saveImport} />}
           {view === "study" && study && currentWord && <StudyView study={study} currentWord={currentWord} quizChoices={quizChoices} typingInputRef={typingInputRef} isFullscreen={isFullscreen} onBack={() => setLeaveDialog(true)} onFullscreen={toggleFullscreen} onAnswer={answerCurrent} onInput={(input) => setStudy((current) => ({ ...current, input }))} onTypingSubmit={submitTyping} />}
           {view === "results" && lastResult && <ResultView result={lastResult} onAgain={startStudy} onHome={() => setView("home")} />}
@@ -669,12 +731,17 @@ function LoginView({ onLogin }) {
   );
 }
 
-function InstructorView({ students, studentResults, generatedAccounts, isGenerating, isRefreshingResults, isDemo, onGenerate, onExport, onRefreshResults }) {
-  const [className, setClassName] = useState("");
-  const [prefix, setPrefix] = useState("");
-  const [count, setCount] = useState(10);
+function InstructorView({ students, rosters, studentResults, generatedAccounts, isGenerating, isRefreshingResults, isExportingResults, isDemo, onGenerate, onExport, onExportResults, onRefreshResults }) {
+  const rosterInputRef = useRef(null);
+  const [rosterDraft, setRosterDraft] = useState(null);
+  const [fallbackClass, setFallbackClass] = useState("");
+  const [isReadingRoster, setIsReadingRoster] = useState(false);
+  const [selectedRosterId, setSelectedRosterId] = useState(rosters[0]?.id || "");
   const [showPasswords, setShowPasswords] = useState(false);
   const [error, setError] = useState("");
+  useEffect(() => {
+    if (rosters[0]?.id) setSelectedRosterId(rosters[0].id);
+  }, [rosters[0]?.id]);
   const latestResultByStudent = useMemo(() => {
     const latest = new Map();
     for (const result of studentResults) {
@@ -683,12 +750,42 @@ function InstructorView({ students, studentResults, generatedAccounts, isGenerat
     return latest;
   }, [studentResults]);
   const resultStudentCount = latestResultByStudent.size;
+  const missingClassCount = rosterDraft?.students.filter((student) => !student.className).length || 0;
+
+  async function readRoster(file) {
+    if (!file) return;
+    setError("");
+    setIsReadingRoster(true);
+    try {
+      const parsed = await parseStudentRosterXlsx(file);
+      setRosterDraft(parsed);
+      setFallbackClass("");
+    } catch (readError) {
+      setRosterDraft(null);
+      setError(readError.message || "Không đọc được danh sách sinh viên.");
+    } finally {
+      setIsReadingRoster(false);
+      if (rosterInputRef.current) rosterInputRef.current.value = "";
+    }
+  }
 
   async function submit(event) {
     event.preventDefault();
     setError("");
+    if (!rosterDraft) {
+      setError("Hãy chọn file Excel danh sách sinh viên.");
+      return;
+    }
+    if (missingClassCount && !fallbackClass.trim()) {
+      setError("File chưa có cột Lớp. Hãy nhập tên lớp dùng chung.");
+      return;
+    }
     try {
-      await onGenerate({ className: className.trim(), prefix: prefix.trim(), count: Number(count) });
+      const studentsWithClass = rosterDraft.students.map((student) => ({
+        ...student,
+        className: student.className || fallbackClass.trim(),
+      }));
+      await onGenerate({ students: studentsWithClass, workbook: rosterDraft.workbook });
     } catch (generationError) {
       setError(generationError.message || "Không thể tạo tài khoản.");
     }
@@ -697,7 +794,7 @@ function InstructorView({ students, studentResults, generatedAccounts, isGenerat
   return (
     <div className="instructor-view">
       <div className="instructor-head">
-        <div><div className="eyebrow">Khu vực giảng viên</div><h1>Tài khoản sinh viên</h1><p>Tạo theo lớp, tải một file Excel rồi cấp riêng cho từng sinh viên.</p></div>
+        <div><div className="eyebrow">Khu vực giảng viên</div><h1>Nhập danh sách lớp</h1><p>Tải Excel lên để tạo tài khoản, sau đó xuất điểm vào chính file đó.</p></div>
         <div className="instructor-summary">
           <div className="student-count"><Users size={22} /><span><strong>{students.length}</strong> sinh viên đã tạo</span></div>
           <div className="student-count score-count"><Trophy size={22} /><span><strong>{resultStudentCount}</strong> đã có kết quả</span></div>
@@ -708,23 +805,24 @@ function InstructorView({ students, studentResults, generatedAccounts, isGenerat
 
       <div className="teacher-grid">
         <form className="account-generator" onSubmit={submit}>
-          <div className="generator-title"><span><UserPlus size={20} /></span><div><h2>Tạo một đợt tài khoản</h2><p>Mỗi tài khoản có tên đăng nhập và mật khẩu ngẫu nhiên.</p></div></div>
-          <label className="field-label" htmlFor="class-name">Tên lớp</label>
-          <input id="class-name" className="auth-input" value={className} onChange={(event) => setClassName(event.target.value)} maxLength={80} placeholder="Ví dụ: Lớp 12A1" required />
-          <div className="generator-fields">
-            <label><span>Tiền tố tên đăng nhập</span><input className="auth-input" value={prefix} onChange={(event) => setPrefix(event.target.value)} maxLength={16} placeholder="Để trống = tên lớp" /></label>
-            <label><span>Số lượng</span><input className="auth-input" type="number" min="1" max="50" value={count} onChange={(event) => setCount(event.target.value)} required /></label>
-          </div>
+          <div className="generator-title"><span><FileSpreadsheet size={20} /></span><div><h2>File danh sách sinh viên</h2><p>Cần cột “Họ và tên”; cột “Lớp” có thể dùng để tạo tiền tố tài khoản.</p></div></div>
+          <input ref={rosterInputRef} className="visually-hidden" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(event) => readRoster(event.target.files?.[0])} />
+          <button className={`roster-drop ${rosterDraft ? "ready" : ""}`} type="button" onClick={() => rosterInputRef.current?.click()} disabled={isReadingRoster || isGenerating}>
+            {isReadingRoster ? <LoaderCircle className="spin" size={24} /> : rosterDraft ? <Check size={24} /> : <FileUp size={24} />}
+            <span><b>{isReadingRoster ? "Đang đọc file…" : rosterDraft ? rosterDraft.workbook.originalFileName : "Chọn file Excel (.xlsx)"}</b><small>{rosterDraft ? `${rosterDraft.students.length} sinh viên · Trang ${rosterDraft.workbook.sheetName}` : "Tối đa 100 sinh viên, dung lượng dưới 2,5 MB"}</small></span>
+          </button>
+          {missingClassCount > 0 && <label className="fallback-class"><span>File chưa có cột Lớp · nhập lớp dùng chung</span><input className="auth-input" value={fallbackClass} onChange={(event) => setFallbackClass(event.target.value)} maxLength={80} placeholder="Ví dụ: 12A1" required /></label>}
+          {rosterDraft && <div className="roster-preview"><span>Đã nhận diện</span><b>{rosterDraft.students.slice(0, 3).map((student) => student.displayName).join(", ")}{rosterDraft.students.length > 3 ? ` và ${rosterDraft.students.length - 3} sinh viên khác` : ""}</b></div>}
           {error && <div className="login-error" role="alert"><CircleAlert size={17} /> {error}</div>}
-          <button className="primary-button generator-submit" type="submit" disabled={isGenerating || !className.trim()}>{isGenerating ? <LoaderCircle className="spin" size={18} /> : <UserPlus size={18} />}{isGenerating ? "Đang tạo tài khoản…" : "Tạo tài khoản ngẫu nhiên"}</button>
+          <button className="primary-button generator-submit" type="submit" disabled={isGenerating || isReadingRoster || !rosterDraft}>{isGenerating ? <LoaderCircle className="spin" size={18} /> : <UserPlus size={18} />}{isGenerating ? "Đang tạo tài khoản…" : `Tạo ${rosterDraft?.students.length || 0} tài khoản`}</button>
         </form>
 
         <section className="export-panel">
           <span className="export-icon"><Download size={23} /></span>
           <div className="eyebrow">File cấp cho sinh viên</div>
           <h2>{generatedAccounts.length ? `${generatedAccounts.length} tài khoản sẵn sàng` : "Chưa có đợt mới"}</h2>
-          <p>Mật khẩu chỉ được trả về ở lần tạo này. Hãy xuất Excel trước khi rời trang.</p>
-          <button className="secondary-button" type="button" onClick={onExport} disabled={!generatedAccounts.length}><Download size={18} /> Xuất file Excel (.xlsx)</button>
+          <p>File gốc được thêm cột Tên đăng nhập và Mật khẩu. Mật khẩu chỉ hiện ở lần tạo này.</p>
+          <button className="secondary-button" type="button" onClick={onExport} disabled={!generatedAccounts.length}><Download size={18} /> Tải file cấp tài khoản</button>
         </section>
       </div>
 
@@ -734,11 +832,12 @@ function InstructorView({ students, studentResults, generatedAccounts, isGenerat
       </section>}
 
       <section className="student-directory">
-        <div className="table-title"><div><div className="eyebrow">Điểm học tập</div><h2>Kết quả mới nhất của sinh viên</h2><p>Điểm được ghi sau khi hoàn thành một bộ từ PDF. Bài học thử không được lưu.</p></div><button className="secondary-button password-toggle" type="button" onClick={onRefreshResults} disabled={isRefreshingResults}>{isRefreshingResults ? <LoaderCircle className="spin" size={17} /> : <RotateCcw size={17} />}{isRefreshingResults ? "Đang cập nhật…" : "Cập nhật điểm"}</button></div>
-        {students.length ? <div className="student-table-wrap"><table className="student-table result-table"><thead><tr><th>Sinh viên</th><th>Tên đăng nhập</th><th>Lớp</th><th>Điểm gần nhất</th><th>Kết quả</th><th>Hoàn thành</th></tr></thead><tbody>{students.map((student) => {
+        <div className="table-title"><div><div className="eyebrow">Điểm học tập</div><h2>Kết quả mới nhất của sinh viên</h2><p>Chọn danh sách để xuất chính file đã nhập, có thêm cột Điểm và Lỗi trong quá trình làm bài.</p></div><div className="result-tools"><select className="roster-select" value={selectedRosterId} onChange={(event) => setSelectedRosterId(event.target.value)} disabled={!rosters.length}>{rosters.length ? rosters.map((roster) => <option key={roster.id} value={roster.id}>{roster.originalFileName} · {roster.studentCount} SV</option>) : <option value="">Chưa có file</option>}</select><button className="secondary-button password-toggle" type="button" onClick={() => onExportResults(selectedRosterId)} disabled={!selectedRosterId || isExportingResults}>{isExportingResults ? <LoaderCircle className="spin" size={17} /> : <Download size={17} />}{isExportingResults ? "Đang xuất…" : "Xuất kết quả"}</button><button className="secondary-button password-toggle" type="button" onClick={onRefreshResults} disabled={isRefreshingResults}>{isRefreshingResults ? <LoaderCircle className="spin" size={17} /> : <RotateCcw size={17} />}{isRefreshingResults ? "Đang cập nhật…" : "Cập nhật điểm"}</button></div></div>
+        {students.length ? <div className="student-table-wrap"><table className="student-table result-table"><thead><tr><th>Sinh viên</th><th>Tên đăng nhập</th><th>Lớp</th><th>Điểm gần nhất</th><th>Kết quả</th><th>Lỗi/vi phạm</th><th>Hoàn thành</th></tr></thead><tbody>{students.map((student) => {
           const result = latestResultByStudent.get(student.id);
-          return <tr key={student.id}><td>{student.displayName}</td><td><code>{student.username}</code></td><td>{student.className}</td><td>{result ? <span className={`score-badge ${result.completed ? "" : "left-early"}`}>{result.score} điểm</span> : <span className="no-result">Chưa làm</span>}</td><td>{result ? <><strong>{result.completed ? `${result.correct}/${result.total}` : "Rời bài sớm"}</strong><small>{result.completed ? `${result.deckTitle || "Bộ từ"} · ${formatMode(result.mode)}` : "Đã trừ 5 điểm"}</small></> : "—"}</td><td>{result?.completedAt ? new Intl.DateTimeFormat("vi-VN", { dateStyle: "short", timeStyle: "short" }).format(new Date(result.completedAt)) : "—"}</td></tr>;
-        })}</tbody></table></div> : <div className="empty-students"><GraduationCap size={28} /><strong>Chưa có tài khoản sinh viên</strong><span>Nhập tên lớp và số lượng ở trên để tạo đợt đầu tiên.</span></div>}
+          const issue = !result ? "—" : result.completed ? "Không" : result.violationReason === "fullscreen_exit" ? "Thoát toàn màn hình" : "Rời bài sớm";
+          return <tr key={student.id}><td>{student.displayName}</td><td><code>{student.username}</code></td><td>{student.className}</td><td>{result ? <span className={`score-badge ${result.completed ? "" : "left-early"}`}>{result.score} điểm</span> : <span className="no-result">Chưa làm</span>}</td><td>{result ? <><strong>{result.completed ? `${result.correct}/${result.total}` : "Chưa hoàn thành"}</strong><small>{result.completed ? `${result.deckTitle || "Bộ từ"} · ${formatMode(result.mode)}` : "Đã trừ 5 điểm"}</small></> : "—"}</td><td><span className={result && !result.completed ? "issue-badge" : ""}>{issue}</span></td><td>{result?.completedAt ? new Intl.DateTimeFormat("vi-VN", { dateStyle: "short", timeStyle: "short" }).format(new Date(result.completedAt)) : "—"}</td></tr>;
+        })}</tbody></table></div> : <div className="empty-students"><GraduationCap size={28} /><strong>Chưa có tài khoản sinh viên</strong><span>Tải file Excel danh sách ở trên để tạo đợt đầu tiên.</span></div>}
       </section>
     </div>
   );

@@ -1,9 +1,11 @@
-import { strToU8, zipSync } from "fflate";
+import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 
 const USERNAME_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
 const PASSWORD_LOWER = "abcdefghjkmnpqrstuvwxyz";
 const PASSWORD_UPPER = "ABCDEFGHJKMNPQRSTUVWXYZ";
 const PASSWORD_DIGITS = "23456789";
+const MAX_ROSTER_BYTES = 2_500_000;
+const MAX_STUDENTS = 100;
 
 function randomIndex(length) {
   const values = new Uint32Array(1);
@@ -25,7 +27,7 @@ function shuffleCharacters(characters) {
 }
 
 export function normalizeStudentPrefix(value) {
-  return value
+  return String(value || "")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
@@ -45,25 +47,35 @@ export function makeReadablePassword(length = 10) {
   return shuffleCharacters(characters);
 }
 
-export function createDemoStudentAccounts({ className, prefix, count }) {
-  const normalizedPrefix = normalizeStudentPrefix(prefix || className);
+export function createDemoStudentAccounts({ students }) {
   const usernames = new Set();
-  const accounts = [];
-  while (accounts.length < count) {
-    let suffix = "";
-    for (let index = 0; index < 6; index += 1) suffix += randomFrom(USERNAME_ALPHABET);
-    const username = `${normalizedPrefix}-${suffix}`;
-    if (usernames.has(username)) continue;
+  return students.map((student) => {
+    let username;
+    do {
+      let suffix = "";
+      for (let index = 0; index < 6; index += 1) suffix += randomFrom(USERNAME_ALPHABET);
+      username = `${normalizeStudentPrefix(student.className)}-${suffix}`;
+    } while (usernames.has(username));
     usernames.add(username);
-    accounts.push({
+    return {
       id: `demo-${username}`,
       username,
       password: makeReadablePassword(),
-      className,
-      displayName: `Sinh viên ${String(accounts.length + 1).padStart(2, "0")}`,
-    });
-  }
-  return accounts;
+      className: student.className,
+      displayName: student.displayName,
+      rosterRow: student.rowNumber,
+      rosterId: "demo-roster",
+    };
+  });
+}
+
+function decodeXml(value) {
+  return String(value || "")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&");
 }
 
 function escapeXml(value) {
@@ -75,53 +87,279 @@ function escapeXml(value) {
     .replace(/'/g, "&apos;");
 }
 
-function inlineCell(reference, value, style = 0) {
-  return `<c r="${reference}" t="inlineStr" s="${style}"><is><t xml:space="preserve">${escapeXml(value)}</t></is></c>`;
+function normalizeHeader(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
-function numberCell(reference, value, style = 0) {
-  return `<c r="${reference}" s="${style}"><v>${Number(value)}</v></c>`;
+function columnNumber(reference) {
+  const letters = String(reference || "").match(/[A-Z]+/i)?.[0]?.toUpperCase() || "";
+  return [...letters].reduce((value, letter) => value * 26 + letter.charCodeAt(0) - 64, 0);
 }
 
-export function buildStudentAccountsXlsx(accounts, { className, loginUrl }) {
-  const rows = accounts.map((account, index) => {
-    const row = index + 4;
-    return `<row r="${row}" ht="22" customHeight="1">${numberCell(`A${row}`, index + 1, 3)}${inlineCell(`B${row}`, account.displayName, 3)}${inlineCell(`C${row}`, account.username, 4)}${inlineCell(`D${row}`, account.password, 4)}${inlineCell(`E${row}`, account.className || className, 3)}${inlineCell(`F${row}`, loginUrl, 5)}</row>`;
-  }).join("");
-  const lastRow = Math.max(4, accounts.length + 3);
-  const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <sheetViews><sheetView workbookViewId="0" showGridLines="0"><pane ySplit="3" topLeftCell="A4" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
-  <cols><col min="1" max="1" width="7" customWidth="1"/><col min="2" max="2" width="20" customWidth="1"/><col min="3" max="3" width="24" customWidth="1"/><col min="4" max="4" width="19" customWidth="1"/><col min="5" max="5" width="18" customWidth="1"/><col min="6" max="6" width="34" customWidth="1"/></cols>
-  <sheetData>
-    <row r="1" ht="28" customHeight="1">${inlineCell("A1", "TÀI KHOẢN SINH VIÊN", 1)}</row>
-    <row r="2" ht="22" customHeight="1">${inlineCell("A2", `Lớp: ${className} · Giữ kín mật khẩu và cấp riêng cho từng sinh viên.`, 2)}</row>
-    <row r="3" ht="24" customHeight="1">${inlineCell("A3", "STT", 2)}${inlineCell("B3", "Tên hiển thị", 2)}${inlineCell("C3", "Tên đăng nhập", 2)}${inlineCell("D3", "Mật khẩu", 2)}${inlineCell("E3", "Lớp", 2)}${inlineCell("F3", "Đường dẫn đăng nhập", 2)}</row>
-    ${rows}
-  </sheetData>
-  <mergeCells count="2"><mergeCell ref="A1:F1"/><mergeCell ref="A2:F2"/></mergeCells>
-  <autoFilter ref="A3:F${lastRow}"/>
-  <pageMargins left="0.35" right="0.35" top="0.5" bottom="0.5" header="0.2" footer="0.2"/>
-</worksheet>`;
-  const files = {
-    "[Content_Types].xml": strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`),
-    "_rels/.rels": strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`),
-    "xl/workbook.xml": strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Tài khoản sinh viên" sheetId="1" r:id="rId1"/></sheets></workbook>`),
-    "xl/_rels/workbook.xml.rels": strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`),
-    "xl/styles.xml": strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="3"><font><sz val="11"/><name val="Arial"/><color rgb="FF182039"/></font><font><b/><sz val="15"/><name val="Arial"/><color rgb="FFFFFFFF"/></font><font><b/><sz val="10"/><name val="Arial"/><color rgb="FFFFFFFF"/></font></fonts><fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF151D35"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FF27536B"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left/><right/><top/><bottom style="thin"><color rgb="FFDCE4EA"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="6"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center"/></xf><xf numFmtId="0" fontId="2" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf><xf numFmtId="49" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`),
-    "xl/worksheets/sheet1.xml": strToU8(sheetXml),
+function columnLetters(number) {
+  let value = Number(number);
+  let result = "";
+  while (value > 0) {
+    value -= 1;
+    result = String.fromCharCode(65 + (value % 26)) + result;
+    value = Math.floor(value / 26);
+  }
+  return result;
+}
+
+function getAttribute(xml, name) {
+  return xml.match(new RegExp(`\\b${name}="([^"]*)"`))?.[1] || "";
+}
+
+function parseSharedStrings(files) {
+  const bytes = files["xl/sharedStrings.xml"];
+  if (!bytes) return [];
+  const xml = strFromU8(bytes);
+  return [...xml.matchAll(/<si\b[^>]*>([\s\S]*?)<\/si>/g)].map((match) =>
+    [...match[1].matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)]
+      .map((text) => decodeXml(text[1]))
+      .join(""));
+}
+
+function readCellValue(cellXml, sharedStrings) {
+  const type = getAttribute(cellXml, "t");
+  if (type === "inlineStr") {
+    return [...cellXml.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)]
+      .map((text) => decodeXml(text[1]))
+      .join("");
+  }
+  const raw = cellXml.match(/<v\b[^>]*>([\s\S]*?)<\/v>/)?.[1] ?? "";
+  if (type === "s") return sharedStrings[Number(raw)] ?? "";
+  if (type === "b") return raw === "1" ? "TRUE" : "FALSE";
+  return decodeXml(raw);
+}
+
+function readRows(sheetXml, sharedStrings) {
+  return [...sheetXml.matchAll(/<row\b[^>]*\br="(\d+)"[^>]*>([\s\S]*?)<\/row>/g)].map((rowMatch) => {
+    const cells = new Map();
+    for (const cellMatch of rowMatch[2].matchAll(/<c\b[^>]*\br="([A-Z]+\d+)"[^>]*>[\s\S]*?<\/c>/gi)) {
+      cells.set(columnNumber(cellMatch[1]), readCellValue(cellMatch[0], sharedStrings).trim());
+    }
+    return { rowNumber: Number(rowMatch[1]), cells };
+  });
+}
+
+function findWorksheet(files) {
+  const workbookXml = strFromU8(files["xl/workbook.xml"] || new Uint8Array());
+  const firstSheet = workbookXml.match(/<sheet\b[^>]*\bname="([^"]+)"[^>]*\br:id="([^"]+)"[^>]*\/?\s*>/);
+  if (!firstSheet) throw new Error("Không đọc được trang tính đầu tiên trong file Excel.");
+  const relsXml = strFromU8(files["xl/_rels/workbook.xml.rels"] || new Uint8Array());
+  const relationships = [...relsXml.matchAll(/<Relationship\b[^>]*\bId="([^"]+)"[^>]*\bTarget="([^"]+)"[^>]*\/?\s*>/g)];
+  const target = relationships.find((relationship) => relationship[1] === firstSheet[2])?.[2];
+  if (!target) throw new Error("Không tìm thấy dữ liệu trang tính trong file Excel.");
+  const worksheetPath = target.startsWith("/")
+    ? target.slice(1)
+    : `xl/${target.replace(/^\.\//, "")}`.replace(/\\/g, "/");
+  return { sheetName: decodeXml(firstSheet[1]), worksheetPath };
+}
+
+function bytesToBase64(bytes) {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+  }
+  return btoa(binary);
+}
+
+function base64ToBytes(base64) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return bytes;
+}
+
+export async function parseStudentRosterXlsx(file) {
+  if (!file) throw new Error("Hãy chọn một file Excel.");
+  if (!/\.xlsx$/i.test(file.name)) throw new Error("Danh sách sinh viên phải là file .xlsx.");
+  if (file.size > MAX_ROSTER_BYTES) throw new Error("File Excel cần nhỏ hơn 2,5 MB.");
+
+  let bytes;
+  let files;
+  try {
+    bytes = new Uint8Array(await file.arrayBuffer());
+    files = unzipSync(bytes);
+  } catch {
+    throw new Error("Không mở được file Excel. Hãy dùng file .xlsx không đặt mật khẩu.");
+  }
+
+  const { sheetName, worksheetPath } = findWorksheet(files);
+  const sheetBytes = files[worksheetPath];
+  if (!sheetBytes) throw new Error("Trang tính đầu tiên không có dữ liệu.");
+  const sharedStrings = parseSharedStrings(files);
+  const rows = readRows(strFromU8(sheetBytes), sharedStrings);
+  const nameHeaders = new Set(["ho va ten", "ho ten", "ten sinh vien", "sinh vien", "full name", "name"]);
+  const classHeaders = new Set(["lop", "ten lop", "ma lop", "class"]);
+  let headerRow;
+  let nameColumn = 0;
+  let classColumn = 0;
+
+  for (const row of rows.filter((item) => item.rowNumber <= 20)) {
+    let candidateNameColumn = 0;
+    let candidateClassColumn = 0;
+    for (const [column, value] of row.cells) {
+      const normalized = normalizeHeader(value);
+      if (nameHeaders.has(normalized)) candidateNameColumn = column;
+      if (classHeaders.has(normalized)) candidateClassColumn = column;
+    }
+    if (candidateNameColumn) {
+      headerRow = row;
+      nameColumn = candidateNameColumn;
+      classColumn = candidateClassColumn;
+      break;
+    }
+  }
+
+  if (!headerRow || !nameColumn) {
+    throw new Error('Không tìm thấy cột “Họ và tên”. Hãy đặt tiêu đề cột là “Họ và tên”.');
+  }
+
+  const students = rows
+    .filter((row) => row.rowNumber > headerRow.rowNumber && row.cells.get(nameColumn))
+    .map((row) => ({
+      displayName: row.cells.get(nameColumn).slice(0, 120),
+      className: (classColumn ? row.cells.get(classColumn) : "")?.slice(0, 80) || "",
+      rowNumber: row.rowNumber,
+    }));
+
+  if (!students.length) throw new Error("File Excel chưa có sinh viên bên dưới cột Họ và tên.");
+  if (students.length > MAX_STUDENTS) throw new Error(`Mỗi lần chỉ nhập tối đa ${MAX_STUDENTS} sinh viên.`);
+
+  return {
+    students,
+    workbook: {
+      originalFileName: file.name,
+      originalFileBase64: bytesToBase64(bytes),
+      sheetName,
+      worksheetPath,
+      headerRow: headerRow.rowNumber,
+      nameColumn,
+      classColumn: classColumn || null,
+    },
   };
+}
+
+function inlineCell(reference, value, style = "") {
+  const styleAttribute = style === "" ? "" : ` s="${style}"`;
+  return `<c r="${reference}" t="inlineStr"${styleAttribute}><is><t xml:space="preserve">${escapeXml(value)}</t></is></c>`;
+}
+
+function numberCell(reference, value, style = "") {
+  const styleAttribute = style === "" ? "" : ` s="${style}"`;
+  return `<c r="${reference}"${styleAttribute}><v>${Number(value)}</v></c>`;
+}
+
+function rowStyle(rowXml, preferredColumn) {
+  const preferred = rowXml.match(new RegExp(`<c\\b[^>]*\\br="${columnLetters(preferredColumn)}\\d+"[^>]*>`, "i"))?.[0];
+  const fallback = [...rowXml.matchAll(/<c\b[^>]*>/gi)].at(-1)?.[0];
+  return getAttribute(preferred || fallback || "", "s");
+}
+
+function appendColumnsToWorkbook({ originalFileBase64, worksheetPath, headerRow, nameColumn, rows, columns }) {
+  const files = unzipSync(base64ToBytes(originalFileBase64));
+  const path = worksheetPath || findWorksheet(files).worksheetPath;
+  let sheetXml = strFromU8(files[path] || new Uint8Array());
+  if (!sheetXml) throw new Error("Không tìm thấy trang tính gốc để xuất kết quả.");
+
+  const headerPattern = new RegExp(`<row\\b[^>]*\\br="${headerRow}"[^>]*>[\\s\\S]*?<\\/row>`);
+  const headerMatch = sheetXml.match(headerPattern);
+  if (!headerMatch) throw new Error("Không tìm thấy dòng tiêu đề trong file gốc.");
+  const existingColumns = [...sheetXml.matchAll(/<c\b[^>]*\br="([A-Z]+)\d+"/gi)].map((match) => columnNumber(match[1]));
+  const firstOutputColumn = Math.max(nameColumn || 1, ...existingColumns) + 1;
+  const headerStyle = rowStyle(headerMatch[0], nameColumn);
+  const headerCells = columns.map((column, index) => inlineCell(`${columnLetters(firstOutputColumn + index)}${headerRow}`, column.header, headerStyle)).join("");
+  sheetXml = sheetXml.replace(headerPattern, headerMatch[0].replace("</row>", `${headerCells}</row>`));
+
+  for (const rowData of rows) {
+    const rowPattern = new RegExp(`<row\\b[^>]*\\br="${rowData.rowNumber}"[^>]*>[\\s\\S]*?<\\/row>`);
+    const rowMatch = sheetXml.match(rowPattern);
+    if (!rowMatch) continue;
+    const style = rowStyle(rowMatch[0], nameColumn);
+    const cells = columns.map((column, index) => {
+      const value = rowData[column.key];
+      const reference = `${columnLetters(firstOutputColumn + index)}${rowData.rowNumber}`;
+      return column.type === "number" && typeof value === "number"
+        ? numberCell(reference, value, style)
+        : inlineCell(reference, value ?? "", style);
+    }).join("");
+    sheetXml = sheetXml.replace(rowPattern, rowMatch[0].replace("</row>", `${cells}</row>`));
+  }
+
+  const finalColumn = firstOutputColumn + columns.length - 1;
+  const maxRow = Math.max(headerRow, ...rows.map((row) => row.rowNumber));
+  sheetXml = sheetXml.replace(/<dimension\b[^>]*\bref="([^"]+)"[^>]*\/?\s*>/, (dimension, reference) => {
+    const start = reference.includes(":") ? reference.split(":")[0] : "A1";
+    const end = reference.includes(":") ? reference.split(":")[1] : reference;
+    const existingLastColumn = columnNumber(end);
+    const existingLastRow = Number(end.match(/\d+/)?.[0] || 1);
+    return dimension.replace(reference, `${start}:${columnLetters(Math.max(finalColumn, existingLastColumn))}${Math.max(maxRow, existingLastRow)}`);
+  });
+  const columnDefinitions = columns.map((column, index) => {
+    const columnIndex = firstOutputColumn + index;
+    return `<col min="${columnIndex}" max="${columnIndex}" width="${column.width || 18}" customWidth="1"/>`;
+  }).join("");
+  if (/<cols\b[^>]*>/.test(sheetXml)) sheetXml = sheetXml.replace("</cols>", `${columnDefinitions}</cols>`);
+  else sheetXml = sheetXml.replace(/<sheetData\b/, `<cols>${columnDefinitions}</cols><sheetData`);
+
+  files[path] = strToU8(sheetXml);
   return zipSync(files, { level: 6 });
 }
 
-export function downloadStudentAccountsXlsx(accounts, options) {
-  const bytes = buildStudentAccountsXlsx(accounts, options);
+export function buildRosterCredentialsXlsx(workbook, accounts) {
+  return appendColumnsToWorkbook({
+    ...workbook,
+    rows: accounts.map((account) => ({
+      rowNumber: account.rosterRow,
+      username: account.username,
+      password: account.password,
+    })),
+    columns: [
+      { key: "username", header: "Tên đăng nhập", width: 24 },
+      { key: "password", header: "Mật khẩu", width: 18 },
+    ],
+  });
+}
+
+export function buildRosterResultsXlsx(workbook, resultRows) {
+  return appendColumnsToWorkbook({
+    ...workbook,
+    rows: resultRows,
+    columns: [
+      { key: "score", header: "Điểm", width: 12, type: "number" },
+      { key: "issue", header: "Lỗi trong quá trình làm bài", width: 30 },
+    ],
+  });
+}
+
+function downloadBytes(bytes, fileName) {
   const blob = new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
-  const date = new Date().toISOString().slice(0, 10);
   anchor.href = url;
-  anchor.download = `tai-khoan-${normalizeStudentPrefix(options.className)}-${date}.xlsx`;
+  anchor.download = fileName;
   anchor.click();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function outputFileName(originalFileName, suffix) {
+  const base = String(originalFileName || "danh-sach-sinh-vien").replace(/\.xlsx$/i, "");
+  return `${base}-${suffix}.xlsx`;
+}
+
+export function downloadRosterCredentialsXlsx(workbook, accounts) {
+  downloadBytes(buildRosterCredentialsXlsx(workbook, accounts), outputFileName(workbook.originalFileName, "tai-khoan"));
+}
+
+export function downloadRosterResultsXlsx(workbook, resultRows) {
+  downloadBytes(buildRosterResultsXlsx(workbook, resultRows), outputFileName(workbook.originalFileName, "ket-qua"));
 }
