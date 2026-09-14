@@ -87,6 +87,43 @@ export function isDeckLockedForStudent(deck, account) {
   return false;
 }
 
+export function formatViolationText(result) {
+  if (!result) return "—";
+  if (result.violationReason) {
+    const vr = result.violationReason;
+    if (vr === "fullscreen_exit") {
+      return "Vi phạm lần 1: Thoát toàn màn hình (Trừ 25% điểm)";
+    }
+    if (vr === "visibility_hidden") {
+      return "Vi phạm lần 1: Chuyển ứng dụng / tab (Trừ 25% điểm)";
+    }
+    if (vr === "left_early") {
+      return "Rời bài thi sớm (Phạm lỗi lần 1: Trừ 25% điểm)";
+    }
+    if (vr === "violation_limit") {
+      return "Bị hủy bài thi (0 điểm): Vi phạm quy chế quá 2 lần";
+    }
+    return vr;
+  }
+  if (!result.completed) {
+    return "Rời bài thi sớm (Chưa hoàn thành)";
+  }
+  return "Không vi phạm quy chế";
+}
+
+export function getViolationBadgeClass(result) {
+  if (!result) return "badge-empty";
+  if (!result.completed && !result.violationReason) return "badge-violation-warning";
+  if (result.violationReason) {
+    const vr = result.violationReason;
+    if (vr.includes("Hủy bài") || vr.includes("0 điểm") || vr.includes("lần 2") || vr.includes("75%")) {
+      return "badge-violation-severe";
+    }
+    return "badge-violation-warning";
+  }
+  return "badge-clean";
+}
+
 export function App() {
   const fileInputRef = useRef(null);
   const typingInputRef = useRef(null);
@@ -167,6 +204,7 @@ export function App() {
     } else {
       suppressFullscreenPenaltyRef.current = false;
     }
+    const resolvedViolationReason = violationReason !== null ? violationReason : (finalStudy?.violationReason || null);
     const result = {
       deckTitle: finalStudy.deckTitle,
       mode: finalStudy.mode,
@@ -174,7 +212,7 @@ export function App() {
       correct: finalStudy.correct,
       total: finalStudy.items.length,
       completed,
-      violationReason,
+      violationReason: resolvedViolationReason,
     };
     setLastResult(result);
     if (completed) setView("results");
@@ -187,7 +225,7 @@ export function App() {
       correct: finalStudy.correct,
       total: finalStudy.items.length,
       completed,
-      violationReason,
+      violationReason: resolvedViolationReason,
     }).then(() => {
       if (finalStudy.deckId !== "demo") {
         setSessions((current) => [{
@@ -197,7 +235,7 @@ export function App() {
           correct_count: finalStudy.correct,
           total_count: finalStudy.items.length,
           completed,
-          violation_reason: violationReason,
+          violation_reason: resolvedViolationReason,
           created_at: new Date().toISOString(),
         }, ...current]);
       }
@@ -284,10 +322,13 @@ export function App() {
       if (account?.role === "student") {
         if (suppressFullscreenPenaltyRef.current) return;
         window.clearTimeout(answerTimerRef.current);
-        finishStudy({ ...study, score: study.score - 5 }, false, "left_early");
+        const nextVio = (study.violationCount || 0) + 1;
+        const newScore = nextVio === 1 ? Math.max(0, Math.round(study.score * 0.75)) : Math.max(0, Math.round(study.score * 0.25));
+        const leaveDetail = `Rời bài thi sớm (Touchpad/Back - Phạm lỗi lần ${nextVio}: Trừ ${nextVio === 1 ? "25%" : "75%"} điểm)`;
+        finishStudy({ ...study, score: newScore, violationCount: nextVio, violationReason: leaveDetail }, false, leaveDetail);
         setLeaveDialog(false);
         setView("deck");
-        showToast("Phát hiện thao tác quay lại (Touchpad/Back): trừ 5 điểm và kết thúc bài.");
+        showToast(`Phát hiện thao tác quay lại: trừ ${nextVio === 1 ? "25%" : "75%"} điểm và kết thúc bài.`);
       } else {
         setLeaveDialog(true);
         window.history.pushState({ vocabStudyGuard: true }, "", window.location.href);
@@ -391,20 +432,24 @@ export function App() {
       if (suppressFullscreenPenaltyRef.current) return;
       fullscreenSeenRef.current = false;
       const nextViolation = (study.violationCount || 0) + 1;
+      const typeLabel = type === "fullscreen_exit" ? "Thoát toàn màn hình" : "Chuyển ứng dụng / tab";
       if (nextViolation === 1) {
         const penalty = Math.max(2, Math.round(study.score * 0.25));
         const newScore = Math.max(0, study.score - penalty);
-        showToast("⚠️ Vi phạm lần 1 (thoát toàn màn hình/chuyển ứng dụng): Trừ 25% điểm! Hãy bấm vào lại toàn màn hình.");
-        setStudy((prev) => prev ? { ...prev, score: newScore, violationCount: 1 } : null);
+        const reason = `Vi phạm lần 1: ${typeLabel} (Trừ 25% điểm)`;
+        showToast(`⚠️ ${reason}! Hãy bấm vào lại toàn màn hình.`);
+        setStudy((prev) => prev ? { ...prev, score: newScore, violationCount: 1, violationReason: reason } : null);
       } else if (nextViolation === 2) {
         const penalty = Math.max(5, Math.round(study.score * 0.75));
         const newScore = Math.max(0, study.score - penalty);
-        showToast("⚠️ Vi phạm lần 2: Trừ 75% điểm! Nếu vi phạm lần 3 bài thi sẽ bị hủy lập tức (0 điểm).");
-        setStudy((prev) => prev ? { ...prev, score: newScore, violationCount: 2 } : null);
+        const reason = `Vi phạm lần 2: ${typeLabel} (Trừ 75% điểm)`;
+        showToast(`⚠️ ${reason}! Nếu vi phạm lần 3 bài thi sẽ bị hủy lập tức (0 điểm).`);
+        setStudy((prev) => prev ? { ...prev, score: newScore, violationCount: 2, violationReason: reason } : null);
       } else {
         window.clearTimeout(answerTimerRef.current);
-        showToast("⛔ Bài thi đã bị hủy (0 điểm) do vi phạm quy chế quá 2 lần.");
-        finishStudy({ ...study, score: 0 }, false, "violation_limit");
+        const reason = `Bị hủy bài thi (0 điểm): Vi phạm quy chế quá 2 lần (${typeLabel})`;
+        showToast(`⛔ ${reason}`);
+        finishStudy({ ...study, score: 0, violationReason: reason }, false, reason);
         setLeaveDialog(false);
         setView("deck");
       }
@@ -645,8 +690,9 @@ export function App() {
     } else {
       newScore = Math.max(0, Math.round(study.score * 0.25));
     }
-    const penalized = { ...study, score: newScore, violationCount: nextVio };
-    finishStudy(penalized, false, "left_early");
+    const leaveDetail = `Rời bài thi sớm (Phạm lỗi lần ${nextVio}: Trừ ${nextVio === 1 ? "25%" : "75%"} điểm)`;
+    const penalized = { ...study, score: newScore, violationCount: nextVio, violationReason: leaveDetail };
+    finishStudy(penalized, false, leaveDetail);
     setLeaveDialog(false);
     setView(canManage ? "create-deck" : "deck");
     showToast(`Đã rời phiên sớm (phạm lỗi lần ${nextVio}): trừ ${nextVio === 1 ? "25%" : "75%"} số điểm.`);
@@ -886,10 +932,7 @@ export function App() {
         .filter((student) => student.rosterId === rosterId && student.rosterRow)
         .map((student) => {
           const result = latestByStudent.get(student.id);
-          let issue = "Chưa làm";
-          if (result?.completed) issue = "Không";
-          else if (result?.violationReason === "fullscreen_exit") issue = "Có – thoát toàn màn hình";
-          else if (result) issue = "Có – rời bài sớm";
+          const issue = result ? formatViolationText(result) : "Chưa làm";
           return { rowNumber: student.rosterRow, score: result?.score ?? "", issue };
         });
       if (!resultRows.length) throw new Error("Không tìm thấy sinh viên thuộc danh sách này.");
@@ -1788,13 +1831,8 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
               <tbody>
                 {filteredStudents.map((student) => {
                   const result = latestResultByStudent.get(student.id);
-                  const issue = !result
-                    ? "—"
-                    : result.completed
-                    ? "Không"
-                    : result.violationReason === "fullscreen_exit"
-                    ? "Thoát toàn màn hình"
-                    : "Rời bài sớm";
+                  const issue = formatViolationText(result);
+                  const badgeClass = getViolationBadgeClass(result);
                   const rawPassword = student.initialPassword || generatedAccountMap.get(student.username) || generatedAccountMap.get(student.id);
                   return (
                     <tr key={student.id}>
@@ -1802,7 +1840,7 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
                       <td><code>{student.username}</code></td>
                       <td>
                         {showPasswords ? (
-                          rawPassword ? <code>{rawPassword}</code> : <span className="no-result" title="Mật khẩu tạo ở đợt trước khi có tính năng lưu. Bấm 'Cấp lại MK' ở trên để tạo mật khẩu mới.">Chưa lưu MK</span>
+                           rawPassword ? <code>{rawPassword}</code> : <span className="no-result" title="Mật khẩu tạo ở đợt trước khi có tính năng lưu. Bấm 'Cấp lại MK' ở trên để tạo mật khẩu mới.">Chưa lưu MK</span>
                         ) : (
                           <code>••••••••••</code>
                         )}
@@ -1821,13 +1859,13 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
                         {result ? (
                           <>
                             <strong>{result.completed ? `${result.correct}/${result.total}` : "Chưa hoàn thành"}</strong>
-                            <small>{result.completed ? `${result.deckTitle || "Bộ từ"} · ${formatMode(result.mode)}` : "Đã trừ 5 điểm"}</small>
+                            <small>{result.completed ? `${result.deckTitle || "Bộ từ"} · ${formatMode(result.mode)}` : (result.violationReason ? "Đã bị trừ điểm vi phạm" : "Chưa hoàn thành")}</small>
                           </>
                         ) : (
                           "—"
                         )}
                       </td>
-                      <td><span className={result && !result.completed ? "issue-badge" : ""}>{issue}</span></td>
+                      <td><span className={`issue-badge ${badgeClass}`}>{issue}</span></td>
                       <td>
                         {result?.completedAt
                           ? new Intl.DateTimeFormat("vi-VN", { dateStyle: "short", timeStyle: "short" }).format(new Date(result.completedAt))
@@ -2775,11 +2813,23 @@ function StudyView({ study, currentWord, quizChoices, typingInputRef, isFullscre
 
 function ResultView({ result, onAgain, onHome }) {
   const percentage = Math.round((result.correct / result.total) * 100);
+  const violationText = formatViolationText(result);
+  const hasViolation = Boolean(result.violationReason);
+
   return (
     <div className="result-view">
       <div className="trophy-wrap"><Trophy size={42} /></div><div className="eyebrow">Hoàn thành phiên học</div>
       <h1>{percentage >= 80 ? "Một vòng học rất chắc!" : "Bạn đang nhớ tốt hơn rồi."}</h1><p>{result.deckTitle} · {formatMode(result.mode)}</p>
       <div className="result-score"><span>Điểm phiên</span><strong>{result.score}</strong></div>
+      {hasViolation && (
+        <div className="result-violation-notice">
+          <CircleAlert size={20} />
+          <div>
+            <strong>Ghi nhận vi phạm quy chế làm bài:</strong>
+            <p>{violationText}</p>
+          </div>
+        </div>
+      )}
       <div className="result-stats"><div><strong>{result.correct}/{result.total}</strong><span>câu đúng</span></div><div><strong>{percentage}%</strong><span>độ chính xác</span></div></div>
       <div className="result-actions"><button className="secondary-button" type="button" onClick={onHome}>Về bộ từ</button><button className="primary-button" type="button" onClick={onAgain}><RotateCcw size={18} /> Học lại</button></div>
     </div>

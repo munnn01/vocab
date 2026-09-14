@@ -17,7 +17,14 @@ globalThis.document = {
   removeEventListener() {},
 };
 
-import { App, isDeckUnlockedForClass, isDeckLockedForStudent, getDeckLockAtForStudent } from "./App";
+import {
+  App,
+  isDeckUnlockedForClass,
+  isDeckLockedForStudent,
+  getDeckLockAtForStudent,
+  formatViolationText,
+  getViolationBadgeClass,
+} from "./App";
 
 test("App renders without crashing", () => {
   const html = renderToString(<App />);
@@ -108,6 +115,47 @@ test("isDeckLockedForStudent and getDeckLockAtForStudent handle per-class deadli
   // Student C (12A3) has no specific deadline and no all deadline, should be open
   expect(getDeckLockAtForStudent(perClassDeck, studentC)).toBe(null);
   expect(isDeckLockedForStudent(perClassDeck, studentC)).toBe(false);
+});
+
+test("formatViolationText and getViolationBadgeClass format violation details clearly", () => {
+  // 1. Clean completion
+  expect(formatViolationText({ completed: true, violationReason: null })).toBe("Không vi phạm quy chế");
+  expect(getViolationBadgeClass({ completed: true, violationReason: null })).toBe("badge-clean");
+
+  // 2. Null/missing result
+  expect(formatViolationText(null)).toBe("—");
+  expect(getViolationBadgeClass(null)).toBe("badge-empty");
+
+  // 3. Incomplete without explicit violation
+  expect(formatViolationText({ completed: false, violationReason: null })).toBe("Rời bài thi sớm (Chưa hoàn thành)");
+  expect(getViolationBadgeClass({ completed: false, violationReason: null })).toBe("badge-violation-warning");
+
+  // 4. Legacy violation keys
+  expect(formatViolationText({ completed: false, violationReason: "fullscreen_exit" })).toBe(
+    "Vi phạm lần 1: Thoát toàn màn hình (Trừ 25% điểm)"
+  );
+  expect(formatViolationText({ completed: false, violationReason: "visibility_hidden" })).toBe(
+    "Vi phạm lần 1: Chuyển ứng dụng / tab (Trừ 25% điểm)"
+  );
+  expect(formatViolationText({ completed: false, violationReason: "left_early" })).toBe(
+    "Rời bài thi sớm (Phạm lỗi lần 1: Trừ 25% điểm)"
+  );
+  expect(formatViolationText({ completed: false, violationReason: "violation_limit" })).toBe(
+    "Bị hủy bài thi (0 điểm): Vi phạm quy chế quá 2 lần"
+  );
+
+  // 5. Custom descriptive violations
+  const vio1 = "Vi phạm lần 1: Thoát toàn màn hình (Trừ 25% điểm)";
+  expect(formatViolationText({ completed: true, violationReason: vio1 })).toBe(vio1);
+  expect(getViolationBadgeClass({ completed: true, violationReason: vio1 })).toBe("badge-violation-warning");
+
+  const vio2 = "Vi phạm lần 2: Chuyển ứng dụng / tab (Trừ 75% điểm)";
+  expect(formatViolationText({ completed: true, violationReason: vio2 })).toBe(vio2);
+  expect(getViolationBadgeClass({ completed: true, violationReason: vio2 })).toBe("badge-violation-severe");
+
+  const vioCancelled = "Bị hủy bài thi (0 điểm): Vi phạm quy chế quá 2 lần (Thoát toàn màn hình)";
+  expect(formatViolationText({ completed: false, violationReason: vioCancelled })).toBe(vioCancelled);
+  expect(getViolationBadgeClass({ completed: false, violationReason: vioCancelled })).toBe("badge-violation-severe");
 });
 
 
