@@ -1843,7 +1843,7 @@ function ClassAccessControl({ availableClasses = [], unlockedClasses = null, onC
           <div className="class-access-quick-actions">
             <button
               type="button"
-              className={`quick-action-btn ${isAllUnlocked ? "active" : ""}`}
+              className={`quick-action-btn unlock-all-btn ${isAllUnlocked ? "active" : ""}`}
               onClick={() => onChange(null)}
               disabled={disabled}
             >
@@ -1851,7 +1851,7 @@ function ClassAccessControl({ availableClasses = [], unlockedClasses = null, onC
             </button>
             <button
               type="button"
-              className={`quick-action-btn ${isAllLocked ? "active" : ""}`}
+              className={`quick-action-btn lock-all-btn ${isAllLocked ? "active" : ""}`}
               onClick={() => onChange([])}
               disabled={disabled}
             >

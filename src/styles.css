@@ -1358,31 +1358,54 @@ kbd { margin-left: 6px; padding: 3px 6px; border: 1px solid rgba(255,255,255,.14
   flex-shrink: 0;
 }
 .quick-action-btn {
-  padding: 5px 11px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #141a30;
-  color: var(--muted);
-  font-size: 0.7rem;
-  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 9px;
+  font-size: 0.74rem;
+  font-weight: 700;
   cursor: pointer;
   transition: all 0.15s ease;
+  border: 1.5px solid rgba(139, 115, 85, 0.28);
+  background: #fdfbf7;
+  color: #5a422d;
 }
 .quick-action-btn:hover {
-  color: var(--ink);
-  border-color: rgba(120, 166, 255, 0.4);
+  color: #2c1810;
+  border-color: rgba(139, 115, 85, 0.5);
+  background: #f8f3eb;
 }
-.quick-action-btn.active {
-  border-color: var(--lime);
-  color: var(--lime);
-  background: rgba(199, 255, 85, 0.08);
+.quick-action-btn.unlock-all-btn.active,
+.quick-action-btn.active:not(.lock-all-btn) {
+  border-color: rgba(46, 125, 50, 0.5);
+  color: #1e6b22;
+  background: rgba(46, 125, 50, 0.1);
+  box-shadow: 0 2px 6px rgba(46, 125, 50, 0.1);
+}
+/* Nút "Khóa tất cả" có màu hơi đỏ giống nút "Xóa bộ từ" */
+.quick-action-btn.lock-all-btn {
+  border: 1.5px solid rgba(192, 57, 43, 0.45);
+  color: #b91c1c;
+  background: #fff5f5;
+  box-shadow: 0 2px 6px rgba(192, 57, 43, 0.06);
+}
+.quick-action-btn.lock-all-btn:hover {
+  background: #fee2e2;
+  color: #991b1b;
+  border-color: rgba(192, 57, 43, 0.7);
+  box-shadow: 0 3px 10px rgba(192, 57, 43, 0.14);
+}
+.quick-action-btn.lock-all-btn.active {
+  background: #fecaca;
+  color: #7f1d1d;
+  border-color: #b91c1c;
+  box-shadow: 0 2px 8px rgba(185, 28, 28, 0.22);
 }
 .class-access-empty {
   padding: 14px;
   text-align: center;
   color: var(--muted);
-  font-size: 0.72rem;
-  background: rgba(255, 255, 255, 0.02);
+  font-size: 0.76rem;
+  background: #fdfbf7;
+  border: 1px dashed rgba(139, 115, 85, 0.25);
   border-radius: 10px;
 }
 .class-access-list {
@@ -1396,27 +1419,27 @@ kbd { margin-left: 6px; padding: 3px 6px; border: 1px solid rgba(255,255,255,.14
   justify-content: space-between;
   padding: 11px 13px;
   border-radius: 11px;
-  border: 1px solid var(--line);
-  background: #151c34;
+  border: 1.5px solid rgba(139, 115, 85, 0.2);
+  background: #ffffff;
   cursor: pointer;
   text-align: left;
   transition: all 0.15s ease;
 }
 .class-access-card:hover {
-  border-color: rgba(255, 255, 255, 0.25);
+  border-color: rgba(139, 115, 85, 0.45);
   transform: translateY(-1px);
 }
 .class-access-card.unlocked {
-  border-color: rgba(101, 223, 135, 0.35);
-  background: rgba(101, 223, 135, 0.06);
+  border-color: rgba(46, 125, 50, 0.35);
+  background: rgba(46, 125, 50, 0.06);
 }
 .class-access-card.locked {
-  border-color: rgba(255, 112, 94, 0.25);
-  background: rgba(255, 112, 94, 0.04);
+  border-color: rgba(192, 57, 43, 0.35);
+  background: #fff8f7;
 }
 .class-access-info .class-name-text {
   font-weight: 700;
-  font-size: 0.8rem;
+  font-size: 0.82rem;
   color: var(--ink);
 }
 .class-lock-badge {
@@ -1425,16 +1448,16 @@ kbd { margin-left: 6px; padding: 3px 6px; border: 1px solid rgba(255,255,255,.14
   gap: 5px;
   padding: 4px 8px;
   border-radius: 7px;
-  font-size: 0.68rem;
+  font-size: 0.7rem;
   font-weight: 700;
 }
 .class-lock-badge.badge-open {
-  background: rgba(101, 223, 135, 0.18);
-  color: var(--green);
+  background: rgba(46, 125, 50, 0.14);
+  color: #2e7d32;
 }
 .class-lock-badge.badge-locked {
-  background: rgba(255, 112, 94, 0.18);
-  color: var(--danger);
+  background: #fee2e2;
+  color: #b91c1c;
 }
 
 /* Thông báo bộ từ bị khóa dành cho sinh viên */
@@ -1444,9 +1467,10 @@ kbd { margin-left: 6px; padding: 3px 6px; border: 1px solid rgba(255,255,255,.14
   gap: 18px;
   margin-top: 20px;
   padding: 22px;
-  border: 1px solid rgba(255, 112, 94, 0.3);
+  border: 1.5px solid rgba(192, 57, 43, 0.35);
   border-radius: 16px;
-  background: rgba(255, 112, 94, 0.07);
+  background: #fff5f5;
+  box-shadow: 0 4px 16px rgba(192, 57, 43, 0.06);
 }
 .deck-locked-badge {
   display: grid;
@@ -1454,24 +1478,26 @@ kbd { margin-left: 6px; padding: 3px 6px; border: 1px solid rgba(255,255,255,.14
   width: 52px;
   aspect-ratio: 1;
   border-radius: 14px;
-  background: rgba(255, 112, 94, 0.18);
-  color: var(--danger);
+  background: rgba(192, 57, 43, 0.12);
+  color: #b91c1c;
   flex-shrink: 0;
 }
 .deck-locked-content h2 {
   margin: 4px 0 6px;
-  color: #ffe0da;
+  color: #991b1b;
   font-size: 1.1rem;
+  font-weight: 800;
 }
 .deck-locked-content p {
   margin: 0;
-  color: #cad1e3;
-  font-size: 0.78rem;
+  color: #5a2e22;
+  font-size: 0.8rem;
   line-height: 1.5;
+  font-weight: 500;
 }
 .deck-icon.locked {
-  background: rgba(255, 112, 94, 0.16) !important;
-  color: var(--danger) !important;
+  background: rgba(192, 57, 43, 0.14) !important;
+  color: #b91c1c !important;
 }
 
 /* ==========================================================================
