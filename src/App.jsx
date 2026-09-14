@@ -61,7 +61,7 @@ export function App() {
   const answerTimerRef = useRef(null);
   const fullscreenSeenRef = useRef(false);
   const suppressFullscreenPenaltyRef = useRef(false);
-  const [view, setView] = useState("home");
+  const [view, setView] = useState(!isSupabaseConfigured ? "create-deck" : "deck");
   const [account, setAccount] = useState(isSupabaseConfigured ? null : {
     id: "demo-instructor",
     role: "instructor",
@@ -189,7 +189,14 @@ export function App() {
     let active = true;
     getCurrentAccount()
       .then((currentAccount) => {
-        if (active) setAccount(currentAccount);
+        if (active) {
+          setAccount(currentAccount);
+          if (currentAccount?.role === "instructor") {
+            setView("create-deck");
+          } else {
+            setView("deck");
+          }
+        }
       })
       .catch((error) => {
         console.error("Không thể kiểm tra phiên đăng nhập", error);
@@ -243,7 +250,7 @@ export function App() {
         window.clearTimeout(answerTimerRef.current);
         finishStudy({ ...study, score: study.score - 5 }, false, "left_early");
         setLeaveDialog(false);
-        setView("home");
+        setView("deck");
         showToast("Phát hiện thao tác quay lại (Touchpad/Back): trừ 5 điểm và kết thúc bài.");
       } else {
         setLeaveDialog(true);
@@ -346,7 +353,7 @@ export function App() {
       window.clearTimeout(answerTimerRef.current);
       finishStudy({ ...study, score: study.score - 5 }, false, "fullscreen_exit");
       setLeaveDialog(false);
-      setView("home");
+      setView("deck");
       showToast("Đã thoát toàn màn hình: trừ 5 điểm và kết thúc bài.");
     };
 
@@ -356,7 +363,7 @@ export function App() {
         window.clearTimeout(answerTimerRef.current);
         finishStudy({ ...study, score: study.score - 5 }, false, "fullscreen_exit");
         setLeaveDialog(false);
-        setView("home");
+        setView("deck");
         showToast("Phát hiện chuyển ứng dụng / chuyển màn hình: trừ 5 điểm và kết thúc bài.");
       }
     };
@@ -460,7 +467,7 @@ export function App() {
       setDecks((current) => [current[0], savedDeck, ...current.slice(1)]);
       setSelectedDeckId(savedDeck.id);
       setImportDraft(null);
-      setView("home");
+      setView("deck");
       showToast(savedDeck.isTemporary
         ? "Đã nhập để học thử. Kết nối Supabase để lưu lâu dài."
         : `Đã lưu ${savedDeck.words.length} từ vào Supabase.`);
@@ -488,7 +495,7 @@ export function App() {
     const penalized = { ...study, score: study.score - 5 };
     finishStudy(penalized, false, "left_early");
     setLeaveDialog(false);
-    setView("home");
+    setView(canManage ? "create-deck" : "deck");
     showToast("Đã rời phiên sớm: trừ 5 điểm.");
   }
 
@@ -565,7 +572,7 @@ export function App() {
       }
       if (view === "study" && study?.deckId === deckToDelete.id) {
         setStudy(null);
-        setView("home");
+        setView(canManage ? "create-deck" : "deck");
       }
       showToast(`Đã xóa bộ từ "${deckToDelete.title}".`);
       setDeckToDelete(null);
@@ -580,7 +587,7 @@ export function App() {
   async function handleLogin(credentials) {
     const loggedInAccount = await signIn(credentials);
     setAccount(loggedInAccount);
-    setView("home");
+    setView(loggedInAccount?.role === "instructor" ? "create-deck" : "deck");
     setGeneratedAccounts([]);
     setGeneratedRoster(null);
   }
@@ -600,7 +607,7 @@ export function App() {
     setGeneratedAccounts([]);
     setGeneratedRoster(null);
     setSelectedDeckId("demo");
-    setView("home");
+    setView("deck");
   }
 
   async function handleGenerateStudents(values) {
@@ -736,7 +743,7 @@ export function App() {
       {canManage && <input ref={fileInputRef} className="visually-hidden" type="file" accept="application/pdf,.pdf" onChange={(event) => handlePdf(event.target.files?.[0])} />}
 
       <header className="topbar">
-        <button className="brand" type="button" onClick={() => (view === "study" ? setLeaveDialog(true) : setView("home"))} aria-label="Về trang bộ từ">
+        <button className="brand" type="button" onClick={() => (view === "study" ? setLeaveDialog(true) : setView(canManage ? "create-deck" : "deck"))} aria-label="Về trang chủ">
           <span className="brand-mark"><Layers3 size={20} /></span>
           <span>Từ Vựng <b>Mỗi Ngày</b></span>
         </button>
@@ -746,7 +753,7 @@ export function App() {
             {canManage ? <ShieldCheck size={17} /> : <GraduationCap size={17} />}
             <span><b>{account.displayName}</b><small>{canManage ? "Giảng viên" : account.className || "Sinh viên"}</small></span>
           </span>
-          {canManage && <button className="icon-button student-manage-shortcut" type="button" onClick={() => setView((current) => current === "students" ? "home" : "students")} aria-label={view === "students" ? "Mở khu vực học" : "Quản lý sinh viên"} title="Quản lý sinh viên"><Users size={18} /></button>}
+          {canManage && <button className="icon-button student-manage-shortcut" type="button" onClick={() => setView((current) => current === "students" ? "create-deck" : "students")} aria-label={view === "students" ? "Mở tạo bộ từ" : "Quản lý sinh viên"} title="Quản lý sinh viên"><Users size={18} /></button>}
           {!canManage && view !== "study" && <button className="icon-text-button" type="button" onClick={toggleFullscreen}>
             {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
             {isFullscreen ? "Thu nhỏ" : "Toàn màn hình"}
@@ -770,21 +777,67 @@ export function App() {
           </div>}
 
           <nav className="sidebar-nav" aria-label="Khu vực ứng dụng">
-            <button className={view !== "students" ? "active" : ""} type="button" onClick={() => setView("home")}><BookOpen size={17} /> {canManage ? "Tạo bộ từ" : "Bài tập của tôi"}</button>
-            {canManage && <button className={view === "students" ? "active" : ""} type="button" onClick={() => setView("students")}><Users size={17} /> Tài khoản & điểm <span>{students.length}</span></button>}
+            {canManage ? (
+              <button
+                className={view === "create-deck" ? "active" : ""}
+                type="button"
+                onClick={() => {
+                  if (view === "study") setLeaveDialog(true);
+                  else setView("create-deck");
+                }}
+              >
+                <BookOpen size={17} /> Tạo bộ từ
+              </button>
+            ) : (
+              <button
+                className={view === "deck" || view === "home" ? "active" : ""}
+                type="button"
+                onClick={() => {
+                  if (view === "study") setLeaveDialog(true);
+                  else setView("deck");
+                }}
+              >
+                <BookOpen size={17} /> Bài tập của tôi
+              </button>
+            )}
+            {canManage && (
+              <button
+                className={view === "students" ? "active" : ""}
+                type="button"
+                onClick={() => {
+                  if (view === "study") setLeaveDialog(true);
+                  else setView("students");
+                }}
+              >
+                <Users size={17} /> Tài khoản & điểm <span>{students.length}</span>
+              </button>
+            )}
           </nav>
 
           <div className="section-heading">
             <span>{canManage ? "Bộ từ của bạn" : "Bộ từ của lớp"}</span>
-            {canManage && <button type="button" onClick={() => fileInputRef.current?.click()} aria-label="Nhập PDF mới"><Plus size={15} /></button>}
+            {canManage && (
+              <button
+                type="button"
+                onClick={() => setView("create-deck")}
+                aria-label="Tạo bộ từ mới"
+                title="Tạo bộ từ mới từ PDF"
+              >
+                <Plus size={15} />
+              </button>
+            )}
           </div>
           <div className="deck-list">
             {decks.map((deck, index) => (
               <div key={deck.id} className="deck-item-wrap">
-                <button className={`deck-row ${selectedDeckId === deck.id ? "active" : ""}`} type="button" onClick={() => {
-                  if (view === "study") setLeaveDialog(true);
-                  else { setSelectedDeckId(deck.id); setView("home"); }
-                }}>
+                <button
+                  className={`deck-row ${view === "deck" && selectedDeckId === deck.id ? "active" : ""}`}
+                  type="button"
+                  onClick={() => {
+                    if (view === "study") setLeaveDialog(true);
+                    else { setSelectedDeckId(deck.id); setView("deck"); }
+                  }}
+                >
                   <span className={`deck-icon ${isDeckLockedForStudent(deck, account) ? "locked" : (index % 2 ? "blue" : "coral")}`}>{isDeckLockedForStudent(deck, account) ? <Lock size={16} /> : deck.isDemo ? <Sparkles size={18} /> : <BookOpen size={18} />}</span>
                   <span><b>{deck.title}</b><small>{isDeckLockedForStudent(deck, account) ? "🔒 Đã khóa cho lớp bạn" : deckMeta(deck)}</small></span>
                 </button>
@@ -805,16 +858,101 @@ export function App() {
               </div>
             ))}
           </div>
-          {canManage && <><button className="upload-mini" type="button" onClick={() => fileInputRef.current?.click()}><FileUp size={18} /> Nhập PDF mới</button>
-          <p className="format-tip">Mỗi dòng theo mẫu<br /><code>new(adj): mới</code></p></>}
+          {canManage && (
+            <>
+              <button className="upload-mini" type="button" onClick={() => setView("create-deck")}>
+                <FileUp size={18} /> Nhập PDF mới
+              </button>
+              <p className="format-tip">Mỗi dòng theo mẫu<br /><code>new(adj): mới</code></p>
+            </>
+          )}
         </aside>
 
         <section className="content-stage">
-          {view === "home" && <HomeView deck={selectedDeck} account={account} canManage={canManage} availableClasses={availableClasses} isImporting={isImporting} isUpdatingMode={isUpdatingMode} isUpdatingAccess={isUpdatingAccess} isDeletingDeck={isDeletingDeck} importProgress={importProgress} onPickPdf={() => fileInputRef.current?.click()} onStart={startStudy} onModeChange={handleDeckPracticeMode} onClassAccessChange={handleDeckClassAccess} onDeleteDeck={(deck) => setDeckToDelete(deck)} />}
-          {view === "students" && canManage && <InstructorView students={students} rosters={rosters} studentResults={studentResults} generatedAccounts={generatedAccounts} isGenerating={isGeneratingAccounts} isRefreshingResults={isRefreshingResults} isExportingResults={isExportingResults} isResettingPasswords={isResettingPasswords} isDemo={Boolean(account.demo)} onGenerate={handleGenerateStudents} onExport={handleExportStudents} onExportResults={handleExportRosterResults} onRefreshResults={handleRefreshStudentResults} onResetPasswords={handleResetPasswords} />}
-          {view === "import" && importDraft && <ImportView draft={importDraft} availableClasses={availableClasses} isSaving={isSaving} connection={connection} onBack={() => setView("home")} onChangeTitle={(title) => setImportDraft((draft) => ({ ...draft, title }))} onChangePracticeMode={(practiceMode) => setImportDraft((draft) => ({ ...draft, practiceMode }))} onChangeUnlockedClasses={(unlockedClasses) => setImportDraft((draft) => ({ ...draft, unlockedClasses }))} onRemoveWord={removeDraftWord} onSave={saveImport} />}
-          {view === "study" && study && currentWord && <StudyView study={study} currentWord={currentWord} quizChoices={quizChoices} typingInputRef={typingInputRef} isFullscreen={isFullscreen} onBack={() => setLeaveDialog(true)} onFullscreen={toggleFullscreen} onAnswer={answerCurrent} onInput={(input) => setStudy((current) => ({ ...current, input }))} onTypingSubmit={submitTyping} />}
-          {view === "results" && lastResult && <ResultView result={lastResult} onAgain={startStudy} onHome={() => setView("home")} />}
+          {((view === "create-deck" && canManage) || (view === "home" && canManage)) && (
+            <CreateDeckView
+              isImporting={isImporting}
+              importProgress={importProgress}
+              onPickPdf={() => fileInputRef.current?.click()}
+              onFileDrop={handlePdf}
+              onSelectDemoDeck={() => {
+                setSelectedDeckId("demo");
+                setView("deck");
+              }}
+            />
+          )}
+          {(view === "deck" || (!canManage && (view === "create-deck" || view === "home"))) && (
+            <HomeView
+              deck={selectedDeck}
+              account={account}
+              canManage={canManage}
+              availableClasses={availableClasses}
+              isImporting={isImporting}
+              isUpdatingMode={isUpdatingMode}
+              isUpdatingAccess={isUpdatingAccess}
+              isDeletingDeck={isDeletingDeck}
+              importProgress={importProgress}
+              onPickPdf={() => fileInputRef.current?.click()}
+              onStart={startStudy}
+              onModeChange={handleDeckPracticeMode}
+              onClassAccessChange={handleDeckClassAccess}
+              onDeleteDeck={(deck) => setDeckToDelete(deck)}
+              onNavigateCreateDeck={() => setView("create-deck")}
+            />
+          )}
+          {view === "students" && canManage && (
+            <InstructorView
+              students={students}
+              rosters={rosters}
+              studentResults={studentResults}
+              generatedAccounts={generatedAccounts}
+              isGenerating={isGeneratingAccounts}
+              isRefreshingResults={isRefreshingResults}
+              isExportingResults={isExportingResults}
+              isResettingPasswords={isResettingPasswords}
+              isDemo={Boolean(account.demo)}
+              onGenerate={handleGenerateStudents}
+              onExport={handleExportStudents}
+              onExportResults={handleExportRosterResults}
+              onRefreshResults={handleRefreshStudentResults}
+              onResetPasswords={handleResetPasswords}
+            />
+          )}
+          {view === "import" && importDraft && (
+            <ImportView
+              draft={importDraft}
+              availableClasses={availableClasses}
+              isSaving={isSaving}
+              connection={connection}
+              onBack={() => setView(canManage ? "create-deck" : "deck")}
+              onChangeTitle={(title) => setImportDraft((draft) => ({ ...draft, title }))}
+              onChangePracticeMode={(practiceMode) => setImportDraft((draft) => ({ ...draft, practiceMode }))}
+              onChangeUnlockedClasses={(unlockedClasses) => setImportDraft((draft) => ({ ...draft, unlockedClasses }))}
+              onRemoveWord={removeDraftWord}
+              onSave={saveImport}
+            />
+          )}
+          {view === "study" && study && currentWord && (
+            <StudyView
+              study={study}
+              currentWord={currentWord}
+              quizChoices={quizChoices}
+              typingInputRef={typingInputRef}
+              isFullscreen={isFullscreen}
+              onBack={() => setLeaveDialog(true)}
+              onFullscreen={toggleFullscreen}
+              onAnswer={answerCurrent}
+              onInput={(input) => setStudy((current) => ({ ...current, input }))}
+              onTypingSubmit={submitTyping}
+            />
+          )}
+          {view === "results" && lastResult && (
+            <ResultView
+              result={lastResult}
+              onAgain={startStudy}
+              onHome={() => setView(canManage ? "create-deck" : "deck")}
+            />
+          )}
         </section>
       </main>
 
@@ -920,14 +1058,10 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
   const [rosterDraft, setRosterDraft] = useState(null);
   const [classNameInput, setClassNameInput] = useState("");
   const [isReadingRoster, setIsReadingRoster] = useState(false);
-  const [selectedRosterId, setSelectedRosterId] = useState(rosters[0]?.id || "");
+  const [selectedRosterId, setSelectedRosterId] = useState("");
   const [selectedClassTab, setSelectedClassTab] = useState("all");
   const [showPasswords, setShowPasswords] = useState(false);
   const [error, setError] = useState("");
-
-  useEffect(() => {
-    if (rosters[0]?.id) setSelectedRosterId(rosters[0].id);
-  }, [rosters[0]?.id]);
 
   const generatedAccountMap = useMemo(() => {
     const map = new Map();
@@ -1192,15 +1326,12 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
               onChange={(event) => setSelectedRosterId(event.target.value)}
               disabled={!rosters.length}
             >
-              {rosters.length ? (
-                rosters.map((roster) => (
-                  <option key={roster.id} value={roster.id}>
-                    {roster.className ? `[${roster.className}] ` : ""}{roster.originalFileName} · {roster.studentCount} SV
-                  </option>
-                ))
-              ) : (
-                <option value="">Chưa có file</option>
-              )}
+              <option value="">Danh sách</option>
+              {rosters.map((roster) => (
+                <option key={roster.id} value={roster.id}>
+                  {roster.originalFileName} · {roster.studentCount} SV
+                </option>
+              ))}
             </select>
             <button className="secondary-button password-toggle" type="button" onClick={() => setShowPasswords((shown) => !shown)}>
               {showPasswords ? <EyeOff size={17} /> : <Eye size={17} />}
@@ -1210,7 +1341,19 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
               {isResettingPasswords ? <LoaderCircle className="spin" size={17} /> : <KeyRound size={17} />}
               {isResettingPasswords ? "Đang cấp lại…" : "Cấp lại MK"}
             </button>
-            <button className="secondary-button password-toggle" type="button" onClick={() => onExportResults(selectedRosterId)} disabled={!selectedRosterId || isExportingResults}>
+            <button
+              className="secondary-button password-toggle"
+              type="button"
+              onClick={() => {
+                if (!selectedRosterId) {
+                  setError("Vui lòng chọn một file trong ô 'Danh sách' trước khi xuất kết quả.");
+                  return;
+                }
+                onExportResults(selectedRosterId);
+              }}
+              disabled={!selectedRosterId || isExportingResults}
+              title={!selectedRosterId ? "Vui lòng chọn file trong ô 'Danh sách'" : "Xuất kết quả của file đã chọn"}
+            >
               {isExportingResults ? <LoaderCircle className="spin" size={17} /> : <Download size={17} />}
               {isExportingResults ? "Đang xuất…" : "Xuất kết quả"}
             </button>
@@ -1247,11 +1390,7 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
                   role="tab"
                   aria-selected={selectedClassTab === cls}
                   className={`class-tab-btn ${selectedClassTab === cls ? "active" : ""}`}
-                  onClick={() => {
-                    setSelectedClassTab(cls);
-                    const matchingRoster = rosters.find((r) => r.className === cls);
-                    if (matchingRoster) setSelectedRosterId(matchingRoster.id);
-                  }}
+                  onClick={() => setSelectedClassTab(cls)}
                 >
                   <span>Lớp {cls}</span>
                   <span className="class-badge">{count}</span>
@@ -1429,7 +1568,216 @@ function ClassAccessControl({ availableClasses = [], unlockedClasses = null, onC
   );
 }
 
-function HomeView({ deck, account, canManage, availableClasses = [], isImporting, isUpdatingMode, isUpdatingAccess, isDeletingDeck, importProgress, onPickPdf, onStart, onModeChange, onClassAccessChange, onDeleteDeck }) {
+function CreateDeckView({
+  isImporting,
+  importProgress,
+  onPickPdf,
+  onFileDrop,
+  onSelectDemoDeck,
+}) {
+  const [isDragging, setIsDragging] = useState(false);
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    const file = e.dataTransfer?.files?.[0];
+    if (file) {
+      if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
+        onFileDrop(file);
+      }
+    }
+  };
+
+  const POS_GUIDE_ITEMS = [
+    { code: "v", name: "Động từ", aliases: "verb, động từ", example: "achieve(v): đạt được" },
+    { code: "n", name: "Danh từ", aliases: "noun, danh từ", example: "challenge(n): thử thách" },
+    { code: "adj", name: "Tính từ", aliases: "adjective, tính từ", example: "brilliant(adj): rực rỡ" },
+    { code: "adv", name: "Trạng từ", aliases: "adverb, trạng từ", example: "confidently(adv): tự tin" },
+    { code: "prep", name: "Giới từ", aliases: "preposition, giới từ", example: "in spite of(prep): mặc dù" },
+    { code: "pron", name: "Đại từ", aliases: "pronoun, đại từ", example: "someone(pron): ai đó" },
+    { code: "conj", name: "Liên từ", aliases: "conjunction, liên từ", example: "although(conj): mặc dù" },
+    { code: "phrase", name: "Cụm từ / Thành ngữ", aliases: "phrase, idiom, cụm từ", example: "break down(phrase): bị hỏng" },
+  ];
+
+  return (
+    <div className="create-deck-view">
+      <div className="create-deck-head">
+        <div>
+          <div className="eyebrow">Khu vực giảng viên</div>
+          <h1>Tạo bộ từ mới từ PDF</h1>
+          <p>Tải file PDF danh sách từ vựng lên hệ thống để tạo bài tập cho sinh viên. Xem quy cách định dạng file chuẩn bên dưới.</p>
+        </div>
+      </div>
+
+      {/* Hero Drag & Drop Area */}
+      <div
+        className={`create-upload-card ${isDragging ? "dragging" : ""}`}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        <div className="create-upload-icon">
+          {isImporting ? <LoaderCircle className="spin" size={36} /> : <FileUp size={36} />}
+        </div>
+        <h2>Kéo thả file PDF vào đây hoặc chọn từ máy tính</h2>
+        <p>Hệ thống tự động quét và nhận diện các dòng theo đúng định dạng mẫu trên toàn bộ các trang.</p>
+
+        {isImporting ? (
+          <div className="create-upload-progress">
+            <div className="create-progress-bar">
+              <span style={{ width: `${Math.max(5, importProgress)}%` }} />
+            </div>
+            <span>Đang đọc và phân tích file PDF… <b>{importProgress}%</b></span>
+          </div>
+        ) : (
+          <div className="create-upload-actions">
+            <button
+              className="primary-button create-pick-btn"
+              type="button"
+              onClick={onPickPdf}
+            >
+              <FileUp size={19} />
+              <span>Chọn file PDF từ máy</span>
+            </button>
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={onSelectDemoDeck}
+              title="Xem trước bộ từ mẫu để hình dung cách hoạt động"
+            >
+              <Sparkles size={16} />
+              <span>Xem bộ từ học thử mẫu</span>
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* PDF Format Guidelines */}
+      <div className="format-guide-section">
+        <div className="format-guide-header">
+          <span className="format-guide-icon"><FileText size={22} /></span>
+          <div>
+            <h2>Quy cách định dạng file PDF chuẩn</h2>
+            <p>Để hệ thống trích xuất từ vựng chính xác, file PDF cần được soạn thảo theo cấu trúc sau:</p>
+          </div>
+        </div>
+
+        {/* Syntax Banner */}
+        <div className="syntax-banner">
+          <div className="syntax-code-wrap">
+            <span className="syntax-tag">Cú pháp từng dòng</span>
+            <code className="syntax-code">từ_vựng(loại_từ): nghĩa_tiếng_việt</code>
+          </div>
+          <div className="syntax-rules">
+            <div className="syntax-rule-item">
+              <span className="rule-num">1</span>
+              <div>
+                <strong>Mỗi từ trên 1 dòng riêng biệt</strong>
+                <p>Không ghép nhiều từ trên cùng một dòng văn bản. Nhấn Enter xuống dòng sau mỗi từ.</p>
+              </div>
+            </div>
+            <div className="syntax-rule-item">
+              <span className="rule-num">2</span>
+              <div>
+                <strong>Loại từ đặt trong ngoặc đơn ( )</strong>
+                <p>Nằm ngay sau từ vựng: <code>(v)</code>, <code>(n)</code>, <code>(adj)</code>, <code>(adv)</code>...</p>
+              </div>
+            </div>
+            <div className="syntax-rule-item">
+              <span className="rule-num">3</span>
+              <div>
+                <strong>Dấu hai chấm : ngăn cách</strong>
+                <p>Bắt buộc có dấu hai chấm <code>:</code> giữa loại từ và phần giải nghĩa tiếng Việt.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="format-guide-grid">
+          {/* Real Examples */}
+          <div className="format-card">
+            <div className="format-card-title">
+              <Sparkles size={18} />
+              <span>Ví dụ văn bản chuẩn trong PDF</span>
+            </div>
+            <p className="format-card-desc">Bạn có thể sao chép văn bản bên dưới vào Word rồi xuất (Export/Save as) ra file PDF:</p>
+            <div className="code-example-box">
+              <pre>
+{`new(adj): mới, mới mẻ
+quiet(adj): yên tĩnh, thanh bình
+journey(n): chuyến đi, hành trình
+habit(n): thói quen
+improve(v): cải thiện, trau dồi
+prepare(v): chuẩn bị
+carefully(adv): một cách cẩn thận
+in spite of(prep): mặc dù, bất chấp
+break down(phrase): bị hỏng, suy sụp`}
+              </pre>
+            </div>
+          </div>
+
+          {/* Supported POS */}
+          <div className="format-card">
+            <div className="format-card-title">
+              <Layers3 size={18} />
+              <span>Bảng loại từ hỗ trợ trong ngoặc (...)</span>
+            </div>
+            <p className="format-card-desc">Hệ thống hỗ trợ cả ký hiệu quốc tế viết tắt và tên đầy đủ:</p>
+            <div className="pos-reference-table-wrap">
+              <table className="pos-reference-table">
+                <thead>
+                  <tr>
+                    <th>Ký hiệu</th>
+                    <th>Loại từ</th>
+                    <th>Tên viết tắt khác</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {POS_GUIDE_ITEMS.map((item) => (
+                    <tr key={item.code}>
+                      <td><span className="pos-chip">{`(${item.code})`}</span></td>
+                      <td><b>{item.name}</b></td>
+                      <td><code>{item.aliases}</code></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        {/* Important Notes */}
+        <div className="format-notes-card">
+          <div className="format-card-title">
+            <CircleAlert size={18} />
+            <span>Lưu ý quan trọng khi chuẩn bị file PDF</span>
+          </div>
+          <ul className="format-notes-list">
+            <li><strong>PDF dạng văn bản (text-based):</strong> File phải được xuất trực tiếp từ Word, Google Docs hoặc LibreOffice. <em>Không dùng file chụp ảnh hoặc file scan hình ảnh</em> vì hệ thống đọc văn bản trực tiếp.</li>
+            <li><strong>Hỗ trợ nhiều trang:</strong> Bạn có thể đưa file PDF 1 trang hoặc nhiều trang, hệ thống sẽ tự động lọc bỏ các dòng thừa (tiêu đề, số trang) và chỉ lấy các dòng khớp mẫu.</li>
+            <li><strong>Nhiều nghĩa tiếng Việt:</strong> Nếu một từ có nhiều nghĩa, hãy ngăn cách bằng dấu phẩy, ví dụ: <code>brilliant(adj): thông minh, sáng dạ, rực rỡ</code>.</li>
+            <li><strong>Kiểm tra trước khi lưu:</strong> Sau khi tải file lên, bạn sẽ được xem lại toàn bộ từ vựng đã nhận diện, sửa tên bộ từ, chọn thể loại kiểm tra (Điền từ / Trắc nghiệm) và mở/khóa quyền cho từng lớp trước khi lưu vào hệ thống.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HomeView({ deck, account, canManage, availableClasses = [], isImporting, isUpdatingMode, isUpdatingAccess, isDeletingDeck, importProgress, onPickPdf, onStart, onModeChange, onClassAccessChange, onDeleteDeck, onNavigateCreateDeck }) {
   const posCounts = useMemo(() => {
     const counts = {};
     for (const word of deck.words) counts[word.partOfSpeech] = (counts[word.partOfSpeech] || 0) + 1;
@@ -1451,10 +1799,12 @@ function HomeView({ deck, account, canManage, availableClasses = [], isImporting
               <span>Xóa bộ từ</span>
             </button>
           )}
-          {canManage && <button className="primary-button compact" type="button" onClick={onPickPdf} disabled={isImporting}>
-            {isImporting ? <LoaderCircle className="spin" size={18} /> : <FileUp size={18} />}
-            {isImporting ? `Đang đọc ${importProgress}%` : "Nhập PDF"}
-          </button>}
+          {canManage && (
+            <button className="primary-button compact" type="button" onClick={onNavigateCreateDeck || onPickPdf} disabled={isImporting}>
+              <Plus size={18} />
+              <span>Tạo bộ từ mới</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -1493,8 +1843,10 @@ function HomeView({ deck, account, canManage, availableClasses = [], isImporting
           </section>
         )}
 
-        <button className="drop-zone" type="button" onClick={onPickPdf}>
-          <span><FileText size={21} /></span><span><b>Tạo bộ từ mới từ PDF</b><small>Định dạng mỗi dòng: new(adj): mới</small></span><span className="drop-action">Chọn file PDF</span>
+        <button className="drop-zone" type="button" onClick={onNavigateCreateDeck || onPickPdf}>
+          <span><FileText size={21} /></span>
+          <span><b>Tạo bộ từ mới từ PDF</b><small>Chuyển sang tab Tạo bộ từ để xem hướng dẫn định dạng file và tải lên</small></span>
+          <span className="drop-action">Tạo bộ từ →</span>
         </button>
       </> : isLockedForMe ? (
         <div className="deck-locked-container">
