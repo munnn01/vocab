@@ -687,85 +687,102 @@ export function DeckExamModeSettings({ isExamMode, onChange, disabled }) {
 
 export function DeckTimeLimitSettings({ timeLimitMinutes, onChange, disabled }) {
   const currentLimit = timeLimitMinutes || null;
-  const [customVal, setCustomVal] = useState(currentLimit && ![5, 10, 15, 20].includes(currentLimit) ? String(currentLimit) : "");
-  const [isCustom, setIsCustom] = useState(Boolean(currentLimit && ![5, 10, 15, 20].includes(currentLimit)));
-
   const options = [
-    { label: "Không giới hạn", value: null },
-    { label: "5 phút", value: 5 },
-    { label: "10 phút", value: 10 },
-    { label: "15 phút", value: 15 },
-    { label: "20 phút", value: 20 },
+    { value: null, title: "Không giới hạn", desc: "Làm bài tự do không áp lực thời gian" },
+    { value: 5, title: "5 phút", desc: "Kiểm tra nhanh tốc độ" },
+    { value: 10, title: "10 phút", desc: "Thời lượng tiêu chuẩn" },
+    { value: 15, title: "15 phút", desc: "Bài kiểm tra vừa phải" },
+    { value: 20, title: "20 phút", desc: "Bài thi chuyên sâu" },
   ];
+  const isPreset = options.some((opt) => opt.value === currentLimit);
+  const [isCustom, setIsCustom] = useState(!isPreset && currentLimit !== null);
+  const [customVal, setCustomVal] = useState(!isPreset && currentLimit ? String(currentLimit) : "");
 
   return (
-    <div className="setting-card time-limit-setting">
-      <div className="setting-card-head">
-        <div className="setting-icon-title">
-          <Timer size={18} className="setting-icon" />
-          <strong>Thời gian làm bài</strong>
+    <div className="time-limit-settings-card">
+      <div className="time-limit-header">
+        <div className="time-limit-title">
+          <span className="time-icon-badge"><Timer size={20} /></span>
+          <div>
+            <strong>Thời gian làm bài</strong>
+            <p>Đồng hồ đếm ngược trong lúc làm bài. Khi hết giờ bài thi tự động nộp.</p>
+          </div>
         </div>
-        <span className="status-pill">
-          {currentLimit ? `${currentLimit} phút` : "Không giới hạn"}
+        <span className={`time-status-pill ${currentLimit ? "active" : ""}`}>
+          {currentLimit ? `⏱️ ${currentLimit} phút` : "⏳ Không giới hạn"}
         </span>
       </div>
-      <p className="setting-description">
-        Đồng hồ đếm ngược trong lúc học sinh làm bài. Khi hết giờ, bài thi sẽ được tự động nộp và ghi nhận điểm.
-      </p>
-      <div className="attempts-options-grid">
-        {options.map((opt) => (
-          <button
-            key={String(opt.value)}
-            type="button"
-            className={`attempt-opt-btn ${!isCustom && currentLimit === opt.value ? "active" : ""}`}
-            onClick={() => {
-              setIsCustom(false);
-              onChange(opt.value);
-            }}
-            disabled={disabled}
-          >
-            {opt.label}
-          </button>
-        ))}
+
+      <div className="time-options-grid">
+        {options.map((opt) => {
+          const isSelected = !isCustom && currentLimit === opt.value;
+          return (
+            <button
+              key={String(opt.value)}
+              type="button"
+              className={`time-opt-card ${isSelected ? "active" : ""}`}
+              onClick={() => {
+                setIsCustom(false);
+                onChange(opt.value);
+              }}
+              disabled={disabled}
+            >
+              <div className="time-card-top">
+                <span className="time-val">{opt.title}</span>
+                {isSelected && <Check size={16} className="check-icon" />}
+              </div>
+              <small>{opt.desc}</small>
+            </button>
+          );
+        })}
         <button
           type="button"
-          className={`attempt-opt-btn ${isCustom ? "active" : ""}`}
+          className={`time-opt-card ${isCustom ? "active" : ""}`}
           onClick={() => setIsCustom(true)}
           disabled={disabled}
         >
-          Tùy chỉnh…
+          <div className="time-card-top">
+            <span className="time-val">Tùy chỉnh…</span>
+            {isCustom && <Check size={16} className="check-icon" />}
+          </div>
+          <small>Nhập số phút tự chọn</small>
         </button>
       </div>
+
       {isCustom && (
-        <div className="custom-limit-row">
-          <input
-            type="number"
-            min="1"
-            max="180"
-            className="title-input compact-attempts-input"
-            value={customVal}
-            onChange={(e) => setCustomVal(e.target.value)}
-            placeholder="Nhập số phút (VD: 8, 30...)"
-            disabled={disabled}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
+        <div className="custom-time-row">
+          <label htmlFor="custom-time-input">Nhập thời gian đếm ngược (phút):</label>
+          <div className="custom-time-inputs">
+            <input
+              id="custom-time-input"
+              type="number"
+              min="1"
+              max="180"
+              className="custom-time-field"
+              value={customVal}
+              onChange={(e) => setCustomVal(e.target.value)}
+              placeholder="VD: 8, 25, 45..."
+              disabled={disabled}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  const num = parseInt(customVal, 10);
+                  if (num > 0) onChange(num);
+                }
+              }}
+            />
+            <button
+              type="button"
+              className="primary-button compact"
+              onClick={() => {
                 const num = parseInt(customVal, 10);
                 if (num > 0) onChange(num);
-              }
-            }}
-          />
-          <button
-            type="button"
-            className="secondary-button compact"
-            onClick={() => {
-              const num = parseInt(customVal, 10);
-              if (num > 0) onChange(num);
-            }}
-            disabled={disabled || !customVal || parseInt(customVal, 10) <= 0}
-          >
-            Lưu phút
-          </button>
+              }}
+              disabled={disabled || !customVal || parseInt(customVal, 10) <= 0}
+            >
+              <Check size={15} /> Lưu thời gian
+            </button>
+          </div>
         </div>
       )}
     </div>

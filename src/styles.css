@@ -3280,6 +3280,202 @@ kbd { margin-left: 6px; padding: 3px 6px; border: 1px solid rgba(255,255,255,.14
 }
 
 /* ==========================================================================
+   TIME LIMIT SETTINGS CARD (ELEGANT PARCHMENT THEME)
+   ========================================================================== */
+.time-limit-settings-card {
+  padding: 20px;
+  border-radius: 18px;
+  border: 1.5px solid rgba(139, 115, 85, 0.22);
+  background: #ffffff;
+  margin-top: 14px;
+  box-shadow: 0 4px 16px rgba(60, 40, 20, 0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.time-limit-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.time-limit-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.time-icon-badge {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(184, 134, 11, 0.15), rgba(139, 69, 19, 0.12));
+  color: #8b4513;
+  flex-shrink: 0;
+}
+
+.time-limit-title strong {
+  display: block;
+  font-size: 0.98rem;
+  font-weight: 850;
+  color: var(--ink-strong);
+}
+
+.time-limit-title p {
+  margin: 3px 0 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.time-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 99px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  background: rgba(139, 115, 85, 0.12);
+  color: #6b4324;
+  border: 1px solid rgba(139, 115, 85, 0.2);
+}
+
+.time-status-pill.active {
+  background: linear-gradient(135deg, rgba(184, 134, 11, 0.16), rgba(139, 69, 19, 0.1));
+  color: #8b4513;
+  border-color: rgba(184, 134, 11, 0.35);
+}
+
+.time-options-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.time-opt-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 13px;
+  border: 1.5px solid rgba(139, 115, 85, 0.22);
+  background: #fdfbf7;
+  color: #2c1810;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+  font-family: inherit;
+  position: relative;
+  overflow: hidden;
+}
+
+.time-opt-card:hover:not(:disabled) {
+  border-color: #8b4513;
+  background: #fffdf8;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(139, 69, 19, 0.1);
+}
+
+.time-opt-card.active {
+  border-color: #8b4513;
+  background: linear-gradient(135deg, #fffcf6 0%, #f7ede0 100%);
+  box-shadow: 0 3px 12px rgba(139, 69, 19, 0.14);
+}
+
+.time-opt-card.active::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #8b4513, #b8860b);
+}
+
+.time-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.time-val {
+  font-size: 0.92rem;
+  font-weight: 850;
+  color: #2c1810;
+}
+
+.time-opt-card.active .time-val {
+  color: #8b4513;
+}
+
+.time-card-top .check-icon {
+  color: #8b4513;
+  stroke-width: 3;
+}
+
+.time-opt-card small {
+  font-size: 0.72rem;
+  color: #8b7355;
+  line-height: 1.35;
+  font-weight: 500;
+}
+
+.time-opt-card.active small {
+  color: #6d4b28;
+  font-weight: 600;
+}
+
+.custom-time-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(184, 134, 11, 0.06);
+  border: 1px dashed rgba(184, 134, 11, 0.35);
+  margin-top: 4px;
+}
+
+.custom-time-row label {
+  font-size: 0.8rem;
+  font-weight: 750;
+  color: #6b4324;
+}
+
+.custom-time-inputs {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.custom-time-field {
+  width: min(240px, 100%);
+  padding: 8px 14px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  border-radius: 10px;
+  border: 1.5px solid rgba(139, 115, 85, 0.3);
+  background: #ffffff;
+  color: #2c1810;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.custom-time-field:focus {
+  border-color: #8b4513;
+  box-shadow: 0 0 0 3px rgba(139, 69, 19, 0.15);
+}
+
+/* ==========================================================================
    FEATURE 3: MISTAKES SECTION IN RESULTS
    ========================================================================== */
 .result-mistakes-section {
