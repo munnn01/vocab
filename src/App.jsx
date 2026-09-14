@@ -16,6 +16,7 @@ import {
   createDemoStudentAccounts, downloadRosterCredentialsXlsx, downloadRosterResultsXlsx,
   parseStudentRosterXlsx,
 } from "./lib/studentAccounts";
+import { English3DScene } from "./components/English3DScene";
 
 const DEMO_DECK = {
   id: "demo",
@@ -768,8 +769,11 @@ export function App() {
         <div className="topbar-actions">
           <span className={`sync-pill ${connection}`}><span /> {connectionLabel}</span>
           <span className="account-pill">
-            {canManage ? <ShieldCheck size={17} /> : <GraduationCap size={17} />}
-            <span><b>{account.displayName}</b><small>{canManage ? "Giảng viên" : account.className || "Sinh viên"}</small></span>
+            <span className="account-avatar-circle">{account.displayName ? account.displayName.trim().charAt(0).toUpperCase() : (canManage ? "G" : "S")}</span>
+            <span className="account-pill-text">
+              <b>{account.displayName}</b>
+              <small>{canManage ? "Giảng viên quản trị" : account.className ? `Lớp ${account.className}` : "Sinh viên"}</small>
+            </span>
           </span>
           {canManage && <button className="icon-button student-manage-shortcut" type="button" onClick={() => setView((current) => current === "students" ? "create-deck" : "students")} aria-label={view === "students" ? "Mở tạo bộ từ" : "Quản lý sinh viên"} title="Quản lý sinh viên"><Users size={18} /></button>}
           {!canManage && view !== "study" && <button className="icon-text-button" type="button" onClick={toggleFullscreen}>
@@ -1026,6 +1030,7 @@ function LoginView({ onLogin }) {
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [selectedTip, setSelectedTip] = useState(null);
 
   async function submit(event) {
     event.preventDefault();
@@ -1042,31 +1047,124 @@ function LoginView({ onLogin }) {
 
   return (
     <div className="auth-screen">
+      <English3DScene onSelectKnowledge={(card) => setSelectedTip(card)} />
+
       <div className="login-layout">
         <section className="login-intro">
-          <span className="brand-mark"><Layers3 size={23} /></span>
+          <div className="login-badge-pill">
+            <Sparkles size={14} />
+            <span>Nền tảng học từ vựng 3D tương tác</span>
+          </div>
+          <span className="brand-mark"><Layers3 size={24} /></span>
           <div className="eyebrow">Từ Vựng Mỗi Ngày</div>
-          <h1>Một lớp học.<br /><span>Hai dạng bài rõ ràng.</span></h1>
-          <p>Giảng viên đưa PDF lên, chọn dạng bài và theo dõi điểm. Sinh viên chỉ cần đăng nhập để làm bài được giao.</p>
-          <div className="login-features"><span><Check size={16} /> Điền từ</span><span><Check size={16} /> Trắc nghiệm</span></div>
+          <h1>Một lớp học.<br /><span>Hai dạng bài chuẩn bản xứ.</span></h1>
+          <p>Không gian học từ vựng chuyên sâu với mô hình 3D trực quan. Giảng viên nạp PDF để tạo bài; sinh viên đăng nhập làm bài và bứt phá phản xạ tiếng Anh.</p>
+          
+          <div className="login-features">
+            <span><Check size={16} /> Điền từ chuẩn ngữ cảnh</span>
+            <span><Check size={16} /> Trắc nghiệm cùng loại từ</span>
+            <span><Check size={16} /> Xuất kết quả vào file Excel gốc</span>
+          </div>
+
+          {selectedTip && (
+            <div className="login-quick-tip-banner">
+              <div className="tip-head">
+                <Sparkles size={14} />
+                <span>Kiến thức vừa chọn: <b>{selectedTip.term}</b></span>
+              </div>
+              <p>{selectedTip.meaning}</p>
+              <small>Ví dụ: "{selectedTip.example}"</small>
+            </div>
+          )}
         </section>
+
         <form className="login-card" onSubmit={submit}>
-          <div className="eyebrow">Đăng nhập</div>
-          <h2>Chọn đúng vai trò của bạn</h2>
+          <div className="login-card-header">
+            <div className="eyebrow">Cổng đăng nhập</div>
+            <h2>Chào mừng bạn trở lại</h2>
+            <p className="login-card-desc">Chọn đúng vai trò của bạn để truy cập không gian học tập</p>
+          </div>
+
           <div className="role-switch" role="tablist" aria-label="Vai trò đăng nhập">
-            <button className={role === "instructor" ? "active" : ""} type="button" onClick={() => { setRole("instructor"); setIdentifier(""); setError(""); }}><ShieldCheck size={18} /> Giảng viên</button>
-            <button className={role === "student" ? "active" : ""} type="button" onClick={() => { setRole("student"); setIdentifier(""); setError(""); }}><GraduationCap size={18} /> Sinh viên</button>
+            <button
+              className={role === "instructor" ? "active" : ""}
+              type="button"
+              onClick={() => { setRole("instructor"); setIdentifier(""); setError(""); }}
+            >
+              <ShieldCheck size={18} />
+              <span>Giảng viên</span>
+            </button>
+            <button
+              className={role === "student" ? "active" : ""}
+              type="button"
+              onClick={() => { setRole("student"); setIdentifier(""); setError(""); }}
+            >
+              <GraduationCap size={18} />
+              <span>Sinh viên</span>
+            </button>
           </div>
-          <label className="field-label" htmlFor="login-identifier">{role === "instructor" ? "Email giảng viên" : "Tên đăng nhập"}</label>
-          <input id="login-identifier" className="auth-input" type={role === "instructor" ? "email" : "text"} value={identifier} onChange={(event) => setIdentifier(event.target.value)} placeholder={role === "instructor" ? "giangvien@truong.edu.vn" : "12a1-k7m4p2"} autoComplete="username" required />
-          <label className="field-label" htmlFor="login-password">Mật khẩu</label>
-          <div className="password-field">
-            <input id="login-password" className="auth-input" type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Nhập mật khẩu" autoComplete="current-password" required />
-            <button type="button" onClick={() => setShowPassword((shown) => !shown)} aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button>
+
+          <div className="form-group">
+            <label className="field-label" htmlFor="login-identifier">
+              {role === "instructor" ? "Email giảng viên" : "Tên đăng nhập sinh viên"}
+            </label>
+            <input
+              id="login-identifier"
+              className="auth-input"
+              type={role === "instructor" ? "email" : "text"}
+              value={identifier}
+              onChange={(event) => setIdentifier(event.target.value)}
+              placeholder={role === "instructor" ? "giangvien@truong.edu.vn" : "12a1-k7m4p2"}
+              autoComplete="username"
+              required
+            />
           </div>
-          {error && <div className="login-error" role="alert"><CircleAlert size={17} /> {error}</div>}
-          <button className="primary-button login-submit" type="submit" disabled={isSubmitting || !identifier.trim() || !password}>{isSubmitting ? <LoaderCircle className="spin" size={18} /> : <ChevronRight size={18} />}{isSubmitting ? "Đang đăng nhập…" : `Vào khu vực ${role === "instructor" ? "giảng viên" : "sinh viên"}`}</button>
-          <p className="login-note">Sinh viên dùng đúng tên đăng nhập và mật khẩu trong file được giảng viên cấp.</p>
+
+          <div className="form-group">
+            <label className="field-label" htmlFor="login-password">Mật khẩu</label>
+            <div className="password-field">
+              <input
+                id="login-password"
+                className="auth-input"
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="Nhập mật khẩu"
+                autoComplete="current-password"
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((shown) => !shown)}
+                aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+                title={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
+          </div>
+
+          {error && (
+            <div className="login-error" role="alert">
+              <CircleAlert size={17} />
+              <span>{error}</span>
+            </div>
+          )}
+
+          <button
+            className="primary-button login-submit"
+            type="submit"
+            disabled={isSubmitting || !identifier.trim() || !password}
+          >
+            {isSubmitting ? <LoaderCircle className="spin" size={18} /> : <ChevronRight size={18} />}
+            <span>{isSubmitting ? "Đang đăng nhập…" : `Vào khu vực ${role === "instructor" ? "giảng viên" : "sinh viên"}`}</span>
+          </button>
+
+          <p className="login-note">
+            {role === "student"
+              ? "Sinh viên dùng đúng tên đăng nhập và mật khẩu trong file Excel được giảng viên cấp."
+              : "Giảng viên quản trị có thể tạo bộ từ mới và theo dõi kết quả làm bài của từng lớp."}
+          </p>
         </form>
       </div>
     </div>
@@ -1189,15 +1287,28 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
         </div>
         <div className="instructor-summary">
           <div className="student-count">
-            <Users size={22} />
-            <span>
-              <strong>{selectedClassTab === "all" ? students.length : filteredStudents.length}</strong> sinh viên {selectedClassTab !== "all" ? `lớp ${selectedClassTab}` : "đã tạo"}
-            </span>
+            <span className="count-icon-wrap users-icon"><Users size={20} /></span>
+            <div>
+              <strong>{selectedClassTab === "all" ? students.length : filteredStudents.length}</strong>
+              <small>sinh viên {selectedClassTab !== "all" ? `lớp ${selectedClassTab}` : "đã nạp"}</small>
+            </div>
           </div>
           <div className="student-count score-count">
-            <Trophy size={22} />
-            <span><strong>{filteredResultCount}</strong> đã có kết quả</span>
+            <span className="count-icon-wrap trophy-icon"><Trophy size={20} /></span>
+            <div>
+              <strong>{filteredResultCount}</strong>
+              <small>đã hoàn thành bài</small>
+            </div>
           </div>
+          {classList.length > 0 && (
+            <div className="student-count class-count">
+              <span className="count-icon-wrap grad-icon"><GraduationCap size={20} /></span>
+              <div>
+                <strong>{classList.length}</strong>
+                <small>lớp học</small>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
