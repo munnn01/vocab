@@ -764,7 +764,7 @@ export function App() {
       <header className="topbar">
         <button className="brand" type="button" onClick={() => (view === "study" ? setLeaveDialog(true) : setView(canManage ? "create-deck" : "deck"))} aria-label="Về trang chủ">
           <span className="brand-mark"><Layers3 size={20} /></span>
-          <span>Từ Vựng <b>Mỗi Ngày</b></span>
+          <span>Vocab <b>with me</b></span>
         </button>
         <div className="topbar-actions">
           <span className="account-pill">
@@ -1031,6 +1031,16 @@ function LoginView({ onLogin }) {
   const [error, setError] = useState("");
   const [isMinimized, setIsMinimized] = useState(false);
 
+  useEffect(() => {
+    const handleWheel = (event) => {
+      event.preventDefault();
+    };
+    window.addEventListener("wheel", handleWheel, { passive: false });
+    return () => {
+      window.removeEventListener("wheel", handleWheel);
+    };
+  }, []);
+
   async function submit(event) {
     event.preventDefault();
     setError("");
@@ -1045,7 +1055,7 @@ function LoginView({ onLogin }) {
   }
 
   return (
-    <div className="auth-screen centered-auth">
+    <div className="auth-screen centered-auth" onWheel={(e) => e.preventDefault()}>
       <BookBackground />
 
       {isMinimized ? (
@@ -1061,8 +1071,7 @@ function LoginView({ onLogin }) {
       ) : (
         <div className="login-centered-container">
           <form className="login-card centered-card" onSubmit={submit}>
-            <div className="login-card-top-bar">
-              <span className="eyebrow" style={{ color: "#8b6e53", fontSize: "0.72rem" }}>Cổng học tập</span>
+            <div className="login-card-top-bar" style={{ justifyContent: "flex-end" }}>
               <button
                 type="button"
                 className="toggle-book-view-btn"
@@ -1076,8 +1085,7 @@ function LoginView({ onLogin }) {
             <div className="login-card-brand">
               <span className="brand-mark"><Layers3 size={24} /></span>
               <div className="brand-title">
-                <h1>Từ Vựng <b>Mỗi Ngày</b></h1>
-                <span>Cổng học tập & quản lý từ vựng</span>
+                <h1>Vocab <b>with me</b></h1>
               </div>
             </div>
 

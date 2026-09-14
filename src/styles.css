@@ -372,13 +372,13 @@ kbd { margin-left: 6px; padding: 3px 6px; border: 1px solid rgba(255,255,255,.14
 .book-stage-wrapper {
   position: absolute;
   inset: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden;
+  overscroll-behavior: none;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-start;
-  padding: 16px 20px 80px;
+  justify-content: center;
+  padding: 16px 20px;
   background: linear-gradient(180deg, #dfd2be 0%, #ede2cb 35%, #f5ece0 70%, #d8c9b2 100%);
   z-index: 1;
 }
@@ -690,13 +690,15 @@ kbd { margin-left: 6px; padding: 3px 6px; border: 1px solid rgba(255,255,255,.14
    AUTHENTICATION & CENTERED LOGIN SCREEN (BOOK THEME)
    ========================================================================== */
 .auth-screen.centered-auth {
-  min-height: 100vh;
+  height: 100vh;
+  max-height: 100vh;
   position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  overflow-x: hidden;
+  overflow: hidden;
+  overscroll-behavior: none;
   background: #e8dcc8;
 }
 
@@ -722,6 +724,7 @@ kbd { margin-left: 6px; padding: 3px 6px; border: 1px solid rgba(255,255,255,.14
   left: 50%;
   transform: translate(-50%, -50%);
   animation: enter 0.35s ease-out;
+  overscroll-behavior: none;
 }
 
 .login-minimized-badge {
