@@ -427,52 +427,8 @@ kbd { margin-left: 6px; padding: 3px 6px; border: 1px solid rgba(255,255,255,.14
   50% { transform: translate(40px, -30px) scale(1.1); }
   100% { transform: translate(-30px, 40px) scale(0.95); }
 }
-
-.english-cards-3d-space {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transform-style: preserve-3d;
-  pointer-events: none;
-  transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-.knowledge-card-3d {
-  position: absolute;
-  width: 310px;
-  pointer-events: auto;
-  cursor: pointer;
-  transform-style: preserve-3d;
-  transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.4s ease, border-color 0.4s ease, z-index 0.1s;
-}
-
-.knowledge-card-3d.active,
-.knowledge-card-3d:hover {
-  z-index: 10;
-  transform: scale(1.06) translateZ(50px) !important;
-}
-
-.card-glass-body {
-  position: relative;
-  padding: 18px 20px;
-  border-radius: 20px;
-  background: rgba(14, 21, 40, 0.82);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.14);
-  transition: all 0.3s ease;
-}
-
-.knowledge-card-3d:hover .card-glass-body {
-  border-color: rgba(255, 255, 255, 0.3);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.25);
-}
-
 /* ==========================================================================
-   AUTHENTICATION & CENTERED LOGIN SCREEN
+   AUTHENTICATION & CENTERED LOGIN SCREEN (3D SKY & CLOUDS)
    ========================================================================== */
 .auth-screen.centered-auth {
   min-height: 100vh;
@@ -481,9 +437,7 @@ kbd { margin-left: 6px; padding: 3px 6px; border: 1px solid rgba(255,255,255,.14
   justify-content: center;
   padding: 24px 16px;
   position: relative;
-  background: radial-gradient(circle at 18% 22%, rgba(56, 189, 248, 0.12), transparent 32rem),
-              radial-gradient(circle at 82% 78%, rgba(163, 230, 53, 0.09), transparent 34rem),
-              #080c18;
+  background: linear-gradient(180deg, #070d1e 0%, #0d1733 45%, #141a38 100%);
   overflow: hidden;
 }
 
