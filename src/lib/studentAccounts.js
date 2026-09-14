@@ -235,7 +235,7 @@ function base64ToBytes(base64) {
 
 export async function parseStudentRosterXlsx(file) {
   if (!file) throw new Error("Hãy chọn một file Excel.");
-  if (!/\.xlsx$/i.test(file.name)) throw new Error("Danh sách sinh viên phải là file .xlsx.");
+  if (!/\.xlsx$/i.test(file.name)) throw new Error("Danh sách học sinh phải là file .xlsx.");
   if (file.size > MAX_ROSTER_BYTES) throw new Error("File Excel cần nhỏ hơn 2,5 MB.");
 
   let bytes;
@@ -290,8 +290,8 @@ export async function parseStudentRosterXlsx(file) {
       rowNumber: row.rowNumber,
     }));
 
-  if (!students.length) throw new Error("File Excel chưa có sinh viên bên dưới cột Họ và tên.");
-  if (students.length > MAX_STUDENTS) throw new Error(`Mỗi lần chỉ nhập tối đa ${MAX_STUDENTS} sinh viên.`);
+  if (!students.length) throw new Error("File Excel chưa có học sinh bên dưới cột Họ và tên.");
+  if (students.length > MAX_STUDENTS) throw new Error(`Mỗi lần chỉ nhập tối đa ${MAX_STUDENTS} học sinh.`);
 
   return {
     students,
@@ -388,15 +388,16 @@ export function buildRosterCredentialsXlsx(workbook, accounts) {
   });
 }
 
-export function buildRosterResultsXlsx(workbook, resultRows) {
+export function buildRosterResultsXlsx(workbook, resultRows, columns = null) {
+  const defaultColumns = [
+    { key: "score", header: "Điểm", width: 12, type: "number" },
+    { key: "practiceCount", header: "Số lần luyện", width: 14, type: "number" },
+    { key: "issue", header: "Lỗi trong quá trình làm bài", width: 30 },
+  ];
   return appendColumnsToWorkbook({
     ...workbook,
     rows: resultRows,
-    columns: [
-      { key: "score", header: "Điểm", width: 12, type: "number" },
-      { key: "practiceCount", header: "Số lần luyện", width: 14, type: "number" },
-      { key: "issue", header: "Lỗi trong quá trình làm bài", width: 30 },
-    ],
+    columns: Array.isArray(columns) && columns.length ? columns : defaultColumns,
   });
 }
 
@@ -411,7 +412,7 @@ function downloadBytes(bytes, fileName) {
 }
 
 function outputFileName(originalFileName, suffix) {
-  const base = String(originalFileName || "danh-sach-sinh-vien").replace(/\.xlsx$/i, "");
+  const base = String(originalFileName || "danh-sach-hoc-sinh").replace(/\.xlsx$/i, "");
   return `${base}-${suffix}.xlsx`;
 }
 
@@ -419,6 +420,6 @@ export function downloadRosterCredentialsXlsx(workbook, accounts) {
   downloadBytes(buildRosterCredentialsXlsx(workbook, accounts), outputFileName(workbook.originalFileName, "tai-khoan"));
 }
 
-export function downloadRosterResultsXlsx(workbook, resultRows) {
-  downloadBytes(buildRosterResultsXlsx(workbook, resultRows), outputFileName(workbook.originalFileName, "ket-qua"));
+export function downloadRosterResultsXlsx(workbook, resultRows, columns = null) {
+  downloadBytes(buildRosterResultsXlsx(workbook, resultRows, columns), outputFileName(workbook.originalFileName, "ket-qua"));
 }

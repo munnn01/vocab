@@ -1749,7 +1749,7 @@ kbd { margin-left: 6px; padding: 3px 6px; border: 1px solid rgba(255,255,255,.14
   color: #b91c1c;
 }
 
-/* Thông báo bộ từ bị khóa dành cho sinh viên */
+/* Thông báo bộ từ bị khóa dành cho học sinh */
 .deck-locked-container {
   display: flex;
   align-items: center;

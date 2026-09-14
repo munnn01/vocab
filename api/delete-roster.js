@@ -35,7 +35,7 @@ export default async function handler(request, response) {
     .maybeSingle();
 
   if (profile?.role !== "instructor") {
-    return response.status(403).json({ error: "Chỉ giảng viên mới được xóa danh sách sinh viên." });
+    return response.status(403).json({ error: "Chỉ giáo viên mới được xóa danh sách học sinh." });
   }
 
   const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
@@ -71,14 +71,14 @@ export default async function handler(request, response) {
       return response.status(400).json({ error: "Thiếu mã danh sách (rosterId)." });
     }
 
-    // 1. Tìm các sinh viên thuộc roster này
+    // 1. Tìm các học sinh thuộc roster này
     const { data: students } = await admin
       .from("profiles")
       .select("user_id")
       .eq("roster_id", rosterId)
       .eq("instructor_id", userData.user.id);
 
-    // 2. Xóa các tài khoản auth và profiles của sinh viên
+    // 2. Xóa các tài khoản auth và profiles của học sinh
     if (students && students.length > 0) {
       for (const s of students) {
         try {

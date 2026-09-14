@@ -174,7 +174,7 @@ export function App() {
   const [account, setAccount] = useState(isSupabaseConfigured ? null : {
     id: "demo-instructor",
     role: "instructor",
-    displayName: "Giảng viên demo",
+    displayName: "Giáo viên demo",
     demo: true,
   });
   const [authStatus, setAuthStatus] = useState(isSupabaseConfigured ? "loading" : "ready");
@@ -386,7 +386,7 @@ export function App() {
 
   const startStudy = useCallback(() => {
     if (account?.role !== "student") {
-      showToast("Giảng viên chỉ thiết lập bài; tài khoản sinh viên mới có thể làm bài.");
+      showToast("Giáo viên chỉ thiết lập bài; tài khoản học sinh mới có thể làm bài.");
       return;
     }
     if (!selectedDeck?.words.length) {
@@ -448,7 +448,7 @@ export function App() {
       void Promise.resolve(context.registerTool({
         name: "start_vocabulary_practice",
         title: "Bắt đầu luyện từ vựng",
-        description: "Bắt đầu bài từ vựng theo thể loại mà giảng viên đã giao.",
+        description: "Bắt đầu bài từ vựng theo thể loại mà giáo viên đã giao.",
         inputSchema: {
           type: "object",
           properties: {},
@@ -763,7 +763,7 @@ export function App() {
     setIsUpdatingMode(true);
     try {
       await updateDeckPracticeMode(selectedDeck.id, mode);
-      showToast(`Sinh viên sẽ làm bài theo dạng ${formatMode(mode)}.`);
+      showToast(`Học sinh sẽ làm bài theo dạng ${formatMode(mode)}.`);
     } catch (error) {
       console.error("Không thể cập nhật thể loại làm bài", error);
       setDecks((current) => current.map((deck) => deck.id === selectedDeck.id ? { ...deck, practiceMode: previousMode } : deck));
@@ -1000,30 +1000,75 @@ export function App() {
         : await loadRosterWorkbook(rosterId);
       const latestResults = account.demo ? studentResults : await loadStudentResults();
       if (!account.demo) setStudentResults(latestResults);
+
+      // Các file từ vựng đã tạo (loại trừ bài demo nếu đã có bài thực tế)
+      const customDecks = (decks || []).filter((d) => !d.isDemo);
+      const targetDecks = customDecks.length > 0 ? customDecks : (decks || []);
+      // Sắp xếp theo thứ tự tạo để cột xuất hiện tuần tự theo bài học
+      const sortedDecks = [...targetDecks].sort((a, b) => {
+        const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return timeA - timeB;
+      });
+
+      const studentDeckResults = new Map();
       const latestByStudent = new Map();
       const practiceCountByStudent = new Map();
+
       for (const result of latestResults) {
         if (!latestByStudent.has(result.studentId)) latestByStudent.set(result.studentId, result);
+        if (result.studentId && result.deckId) {
+          const deckKey = `${result.studentId}_${result.deckId}`;
+          if (!studentDeckResults.has(deckKey)) {
+            studentDeckResults.set(deckKey, result);
+          }
+        }
         if (result.studentId) {
           practiceCountByStudent.set(result.studentId, (practiceCountByStudent.get(result.studentId) || 0) + 1);
         }
       }
+
+      // Mỗi file từ vựng tạo thêm một cột là tên file lúc mình đặt tên (deck.title)
+      const deckColumns = sortedDecks.map((deck) => ({
+        key: `deck_${deck.id}`,
+        header: deck.title || "Bộ từ",
+        width: Math.max(16, Math.min(40, (deck.title || "").length + 5)),
+        type: "number",
+      }));
+
+      const exportColumns = [
+        ...deckColumns,
+        { key: "practiceCount", header: "Số lần luyện", width: 14, type: "number" },
+        { key: "issue", header: "Lỗi trong quá trình làm bài", width: 30 },
+      ];
+
       const resultRows = students
         .filter((student) => student.rosterId === rosterId && student.rosterRow)
         .map((student) => {
           const result = latestByStudent.get(student.id);
           const issue = result ? formatViolationText(result) : "Chưa làm";
           const count = practiceCountByStudent.get(student.id) || 0;
-          return {
+
+          const rowData = {
             rowNumber: student.rosterRow,
-            score: result?.score ?? "",
             practiceCount: count,
             issue,
           };
+
+          // Ở dưới là số điểm của từng học sinh tương ứng với mỗi bài
+          for (const deck of sortedDecks) {
+            const deckRes = studentDeckResults.get(`${student.id}_${deck.id}`);
+            rowData[`deck_${deck.id}`] = (deckRes && typeof deckRes.score === "number")
+              ? deckRes.score
+              : "";
+          }
+
+          return rowData;
         });
-      if (!resultRows.length) throw new Error("Không tìm thấy sinh viên thuộc danh sách này.");
-      downloadRosterResultsXlsx(workbook, resultRows);
-      showToast("Đã xuất file gốc với cột Điểm, Số lần luyện và Lỗi trong quá trình làm bài.");
+
+      if (!resultRows.length) throw new Error("Không tìm thấy học sinh thuộc danh sách này.");
+      downloadRosterResultsXlsx(workbook, resultRows, exportColumns);
+      showToast("Đã xuất file kết quả với cột điểm cho từng bài từ vựng và số lần luyện.");
     } catch (error) {
       console.error("Không thể xuất kết quả vào file gốc", error);
       showToast(error.message || "Chưa xuất được file kết quả.");
@@ -1034,16 +1079,16 @@ export function App() {
 
   async function handleRefreshStudentResults() {
     if (account.demo) {
-      showToast("Bản xem thử chưa có điểm sinh viên trên Supabase.");
+      showToast("Bản xem thử chưa có điểm học sinh trên Supabase.");
       return;
     }
     setIsRefreshingResults(true);
     try {
       const results = await loadStudentResults();
       setStudentResults(results);
-      showToast(results.length ? "Đã cập nhật điểm mới nhất của sinh viên." : "Chưa có sinh viên hoàn thành bài học.");
+      showToast(results.length ? "Đã cập nhật điểm mới nhất của học sinh." : "Chưa có học sinh hoàn thành bài học.");
     } catch (error) {
-      console.error("Không thể cập nhật điểm sinh viên", error);
+      console.error("Không thể cập nhật điểm học sinh", error);
       showToast("Chưa cập nhật được điểm. Vui lòng thử lại.");
     } finally {
       setIsRefreshingResults(false);
@@ -1096,10 +1141,10 @@ export function App() {
             <span className="account-avatar-circle">{account.displayName ? account.displayName.trim().charAt(0).toUpperCase() : (canManage ? "G" : "S")}</span>
             <span className="account-pill-text">
               <b>{account.displayName}</b>
-              <small>{canManage ? "Giảng viên quản trị" : account.className ? `Lớp ${account.className}` : "Sinh viên"}</small>
+              <small>{canManage ? "Giáo viên quản trị" : account.className ? `Lớp ${account.className}` : "Học sinh"}</small>
             </span>
           </span>
-          {canManage && view !== "study" && <button className="icon-button student-manage-shortcut" type="button" onClick={() => setView((current) => current === "students" ? "create-deck" : "students")} aria-label={view === "students" ? "Mở tạo bộ từ" : "Quản lý sinh viên"} title="Quản lý sinh viên"><Users size={18} /></button>}
+          {canManage && view !== "study" && <button className="icon-button student-manage-shortcut" type="button" onClick={() => setView((current) => current === "students" ? "create-deck" : "students")} aria-label={view === "students" ? "Mở tạo bộ từ" : "Quản lý học sinh"} title="Quản lý học sinh"><Users size={18} /></button>}
           {!canManage && view !== "study" && <button className="icon-text-button" type="button" onClick={toggleFullscreen}>
             {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
             {isFullscreen ? "Thu nhỏ" : "Toàn màn hình"}
@@ -1115,7 +1160,7 @@ export function App() {
             {canManage ? <div className="score-card teacher-sidebar-card">
               <div><FileText size={22} /> Bộ từ đã tạo</div>
               <strong>{uploadedDecks.length} <small>bộ từ</small></strong>
-              <p>{totalWords ? `${totalWords} từ đã sẵn sàng giao cho sinh viên.` : "Nhập PDF đầu tiên để tạo bài cho lớp."}</p>
+              <p>{totalWords ? `${totalWords} từ đã sẵn sàng giao cho học sinh.` : "Nhập PDF đầu tiên để tạo bài cho lớp."}</p>
             </div> : <div className="score-card">
               <div><Flame size={22} /> Điểm phiên</div>
               <strong>{lastSession?.score ?? 0} <small>điểm</small></strong>
@@ -1293,6 +1338,7 @@ export function App() {
               students={students}
               rosters={rosters}
               studentResults={studentResults}
+              decks={decks}
               generatedAccounts={generatedAccounts}
               isGenerating={isGeneratingAccounts}
               isRefreshingResults={isRefreshingResults}
@@ -1370,7 +1416,7 @@ export function App() {
             <button className="dialog-close" type="button" onClick={() => !isDeletingDeck && setDeckToDelete(null)} aria-label="Đóng" disabled={isDeletingDeck}><X size={18} /></button>
             <div className="warning-icon"><Trash2 size={25} /></div>
             <h2 id="delete-deck-title">Xóa bộ từ?</h2>
-            <p>Bạn có chắc chắn muốn xóa bộ từ <strong>"{deckToDelete.title}"</strong> ({deckToDelete.words?.length || 0} từ)? Tất cả từ vựng và kết quả làm bài của sinh viên trong bộ từ này sẽ bị xóa vĩnh viễn.</p>
+            <p>Bạn có chắc chắn muốn xóa bộ từ <strong>"{deckToDelete.title}"</strong> ({deckToDelete.words?.length || 0} từ)? Tất cả từ vựng và kết quả làm bài của học sinh trong bộ từ này sẽ bị xóa vĩnh viễn.</p>
             <div className="dialog-actions">
               <button className="secondary-button" type="button" onClick={() => setDeckToDelete(null)} disabled={isDeletingDeck}>Hủy</button>
               <button className="danger-button" type="button" onClick={confirmDeleteDeck} disabled={isDeletingDeck}>
@@ -1467,7 +1513,7 @@ function LoginView({ onLogin }) {
               onClick={() => { setRole("instructor"); setIdentifier(""); setError(""); }}
             >
               <ShieldCheck size={18} />
-              <span>Giảng viên</span>
+              <span>Giáo viên</span>
             </button>
             <button
               className={role === "student" ? "active" : ""}
@@ -1475,13 +1521,13 @@ function LoginView({ onLogin }) {
               onClick={() => { setRole("student"); setIdentifier(""); setError(""); }}
             >
               <GraduationCap size={18} />
-              <span>Sinh viên</span>
+              <span>Học sinh</span>
             </button>
           </div>
 
           <div className="form-group">
             <label className="field-label" htmlFor="login-identifier">
-              {role === "instructor" ? "Email giảng viên" : "Tên đăng nhập sinh viên"}
+              {role === "instructor" ? "Email giáo viên" : "Tên đăng nhập học sinh"}
             </label>
             <input
               id="login-identifier"
@@ -1489,7 +1535,7 @@ function LoginView({ onLogin }) {
               type={role === "instructor" ? "email" : "text"}
               value={identifier}
               onChange={(event) => setIdentifier(event.target.value)}
-              placeholder={role === "instructor" ? "giangvien@truong.edu.vn" : "12a1-k7m4p2"}
+              placeholder={role === "instructor" ? "giaovien@truong.edu.vn" : "12a1-k7m4p2"}
               autoComplete="username"
               required
             />
@@ -1532,13 +1578,13 @@ function LoginView({ onLogin }) {
             disabled={isSubmitting || !identifier.trim() || !password}
           >
             {isSubmitting ? <LoaderCircle className="spin" size={18} /> : <ChevronRight size={18} />}
-            <span>{isSubmitting ? "Đang đăng nhập…" : `Vào khu vực ${role === "instructor" ? "giảng viên" : "sinh viên"}`}</span>
+            <span>{isSubmitting ? "Đang đăng nhập…" : `Vào khu vực ${role === "instructor" ? "giáo viên" : "học sinh"}`}</span>
           </button>
 
           <p className="login-note">
             {role === "student"
-              ? "Sinh viên dùng đúng tên đăng nhập và mật khẩu trong file Excel được cấp."
-              : "Giảng viên quản trị có thể tạo bài tập và theo dõi điểm từng lớp."}
+              ? "Học sinh dùng đúng tên đăng nhập và mật khẩu trong file Excel được cấp."
+              : "Giáo viên quản trị có thể tạo bài tập và theo dõi điểm từng lớp."}
           </p>
         </form>
       </div>
@@ -1547,7 +1593,7 @@ function LoginView({ onLogin }) {
   );
 }
 
-function InstructorView({ students, rosters, studentResults, generatedAccounts, isGenerating, isRefreshingResults, isExportingResults, isResettingPasswords, isDeletingRoster, isDemo, onGenerate, onExport, onExportResults, onRefreshResults, onResetPasswords, onDeleteRoster }) {
+function InstructorView({ students, rosters, studentResults, decks = [], generatedAccounts, isGenerating, isRefreshingResults, isExportingResults, isResettingPasswords, isDeletingRoster, isDemo, onGenerate, onExport, onExportResults, onRefreshResults, onResetPasswords, onDeleteRoster }) {
   const rosterInputRef = useRef(null);
   const [rosterDraft, setRosterDraft] = useState(null);
   const [classNameInput, setClassNameInput] = useState("");
@@ -1556,6 +1602,27 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
   const [selectedClassTab, setSelectedClassTab] = useState("all");
   const [showPasswords, setShowPasswords] = useState(false);
   const [error, setError] = useState("");
+
+  const customDecks = useMemo(() => (decks || []).filter((d) => !d.isDemo), [decks]);
+  const targetDecks = useMemo(() => customDecks.length > 0 ? customDecks : (decks || []), [customDecks, decks]);
+  const sortedDecks = useMemo(() => {
+    return [...targetDecks].sort((a, b) => {
+      const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return timeA - timeB;
+    });
+  }, [targetDecks]);
+
+  const studentDeckResults = useMemo(() => {
+    const map = new Map();
+    for (const res of studentResults) {
+      if (res.studentId && res.deckId) {
+        const key = `${res.studentId}_${res.deckId}`;
+        if (!map.has(key)) map.set(key, res);
+      }
+    }
+    return map;
+  }, [studentResults]);
 
   const generatedAccountMap = useMemo(() => {
     const map = new Map();
@@ -1630,7 +1697,7 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
       setClassNameInput(detected);
     } catch (readError) {
       setRosterDraft(null);
-      setError(readError.message || "Không đọc được danh sách sinh viên.");
+      setError(readError.message || "Không đọc được danh sách học sinh.");
     } finally {
       setIsReadingRoster(false);
       if (rosterInputRef.current) rosterInputRef.current.value = "";
@@ -1641,12 +1708,12 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
     event.preventDefault();
     setError("");
     if (!rosterDraft) {
-      setError("Hãy chọn file Excel danh sách sinh viên.");
+      setError("Hãy chọn file Excel danh sách học sinh.");
       return;
     }
     const chosenClass = classNameInput.trim();
     if (!chosenClass) {
-      setError("Vui lòng nhập tên lớp cho danh sách sinh viên.");
+      setError("Vui lòng nhập tên lớp cho danh sách học sinh.");
       return;
     }
     try {
@@ -1667,7 +1734,7 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
     <div className="instructor-view">
       <div className="instructor-head">
         <div>
-          <div className="eyebrow">Khu vực giảng viên</div>
+          <div className="eyebrow">Khu vực giáo viên</div>
           <h1>Nhập danh sách lớp</h1>
           <p>Tải Excel lên để tạo tài khoản, đặt tên lớp và lọc điểm theo từng lớp.</p>
         </div>
@@ -1676,7 +1743,7 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
             <span className="count-icon-wrap users-icon"><Users size={20} /></span>
             <div>
               <strong>{selectedClassTab === "all" ? students.length : filteredStudents.length}</strong>
-              <small>sinh viên {selectedClassTab !== "all" ? `lớp ${selectedClassTab}` : "đã nạp"}</small>
+              <small>học sinh {selectedClassTab !== "all" ? `lớp ${selectedClassTab}` : "đã nạp"}</small>
             </div>
           </div>
           <div className="student-count score-count">
@@ -1710,7 +1777,7 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
           <div className="generator-title">
             <span><FileSpreadsheet size={20} /></span>
             <div>
-              <h2>File danh sách sinh viên</h2>
+              <h2>File danh sách học sinh</h2>
               <p>Chọn file Excel (.xlsx). Bạn có thể đặt tên lớp cho danh sách này bên dưới.</p>
             </div>
           </div>
@@ -1730,7 +1797,7 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
             {isReadingRoster ? <LoaderCircle className="spin" size={24} /> : rosterDraft ? <Check size={24} /> : <FileUp size={24} />}
             <span>
               <b>{isReadingRoster ? "Đang đọc file…" : rosterDraft ? rosterDraft.workbook.originalFileName : "Chọn file Excel (.xlsx)"}</b>
-              <small>{rosterDraft ? `${rosterDraft.students.length} sinh viên · Trang ${rosterDraft.workbook.sheetName}` : "Tối đa 100 sinh viên, dung lượng dưới 2,5 MB"}</small>
+              <small>{rosterDraft ? `${rosterDraft.students.length} học sinh · Trang ${rosterDraft.workbook.sheetName}` : "Tối đa 100 học sinh, dung lượng dưới 2,5 MB"}</small>
             </span>
           </button>
 
@@ -1755,8 +1822,8 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
 
           {rosterDraft && (
             <div className="roster-preview">
-              <span>Đã nhận diện {rosterDraft.students.length} sinh viên</span>
-              <b>{rosterDraft.students.slice(0, 3).map((student) => student.displayName).join(", ")}{rosterDraft.students.length > 3 ? ` và ${rosterDraft.students.length - 3} sinh viên khác` : ""}</b>
+              <span>Đã nhận diện {rosterDraft.students.length} học sinh</span>
+              <b>{rosterDraft.students.slice(0, 3).map((student) => student.displayName).join(", ")}{rosterDraft.students.length > 3 ? ` và ${rosterDraft.students.length - 3} học sinh khác` : ""}</b>
             </div>
           )}
 
@@ -1774,7 +1841,7 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
 
         <section className="export-panel">
           <span className="export-icon"><Download size={23} /></span>
-          <div className="eyebrow">File cấp cho sinh viên</div>
+          <div className="eyebrow">File cấp cho học sinh</div>
           <h2>{generatedAccounts.length ? `${generatedAccounts.length} tài khoản sẵn sàng` : "Chưa có đợt mới"}</h2>
           <p>File gốc được thêm cột Tên đăng nhập và Mật khẩu. Mật khẩu chỉ hiện ở lần tạo này.</p>
           <button className="secondary-button" type="button" onClick={onExport} disabled={!generatedAccounts.length}>
@@ -1826,8 +1893,8 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
         <div className="table-title">
           <div>
             <div className="eyebrow">Điểm học tập</div>
-            <h2>Kết quả mới nhất của sinh viên</h2>
-            <p>Chọn danh sách để xuất chính file đã nhập, có thêm cột Điểm và Lỗi trong quá trình làm bài.</p>
+            <h2>Kết quả mới nhất của học sinh</h2>
+            <p>Chọn danh sách để xuất chính file đã nhập, có thêm cột cho từng bài từ vựng và số lần luyện.</p>
           </div>
           <div className="result-tools">
             <div className="tools-group file-tools-group">
@@ -1884,7 +1951,7 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
                 {showPasswords ? <EyeOff size={17} /> : <Eye size={17} />}
                 <span>{showPasswords ? "Ẩn mật khẩu" : "Hiện mật khẩu"}</span>
               </button>
-              <button className="secondary-button password-toggle" type="button" onClick={() => onResetPasswords()} disabled={isResettingPasswords || !students.length} title="Đặt lại mật khẩu ngẫu nhiên cho tất cả sinh viên và lưu vào hệ thống">
+              <button className="secondary-button password-toggle" type="button" onClick={() => onResetPasswords()} disabled={isResettingPasswords || !students.length} title="Đặt lại mật khẩu ngẫu nhiên cho tất cả học sinh và lưu vào hệ thống">
                 {isResettingPasswords ? <LoaderCircle className="spin" size={17} /> : <KeyRound size={17} />}
                 <span>{isResettingPasswords ? "Đang cấp lại…" : "Cấp lại MK"}</span>
               </button>
@@ -1896,7 +1963,7 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
           </div>
         </div>
 
-        {/* Thanh danh sách các lớp - Chỉ hiện khi đã có lớp học/sinh viên */}
+        {/* Thanh danh sách các lớp - Chỉ hiện khi đã có lớp học/học sinh */}
         {classList.length > 0 && (
           <div className="class-filter-bar">
             <div className="class-filter-title">
@@ -1939,15 +2006,18 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
             <table className="student-table result-table">
               <thead>
                 <tr>
-                  <th>Sinh viên</th>
+                  <th>Học sinh</th>
                   <th>Tên đăng nhập</th>
                   <th>Mật khẩu</th>
                   <th>Lớp</th>
+                  {sortedDecks.map((deck) => (
+                    <th key={deck.id} title={`Điểm bài: ${deck.title}`}>
+                      {deck.title}
+                    </th>
+                  ))}
                   <th>Số lần luyện</th>
-                  <th>Điểm gần nhất</th>
-                  <th>Kết quả</th>
                   <th>Lỗi/vi phạm</th>
-                  <th>Hoàn thành</th>
+                  <th>Lần thi gần nhất</th>
                 </tr>
               </thead>
               <tbody>
@@ -1969,6 +2039,20 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
                         )}
                       </td>
                       <td><span className="class-name-tag">{student.className}</span></td>
+                      {sortedDecks.map((deck) => {
+                        const deckRes = studentDeckResults.get(`${student.id}_${deck.id}`);
+                        return (
+                          <td key={deck.id}>
+                            {deckRes && typeof deckRes.score === "number" ? (
+                              <span className={`score-badge ${deckRes.completed ? "" : "left-early"}`}>
+                                {deckRes.score} điểm
+                              </span>
+                            ) : (
+                              <span className="no-result">—</span>
+                            )}
+                          </td>
+                        );
+                      })}
                       <td>
                         {practiceCount > 0 ? (
                           <span className="practice-count-badge">
@@ -1976,25 +2060,6 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
                           </span>
                         ) : (
                           <span className="no-result">Chưa luyện</span>
-                        )}
-                      </td>
-                      <td>
-                        {result ? (
-                          <span className={`score-badge ${result.completed ? "" : "left-early"}`}>
-                            {result.score} điểm
-                          </span>
-                        ) : (
-                          <span className="no-result">Chưa làm</span>
-                        )}
-                      </td>
-                      <td>
-                        {result ? (
-                          <>
-                            <strong>{result.completed ? `${result.correct}/${result.total}` : "Chưa hoàn thành"}</strong>
-                            <small>{result.completed ? `${result.deckTitle || "Bộ từ"} · ${formatMode(result.mode)}` : (result.violationReason ? "Đã bị trừ điểm vi phạm" : "Chưa hoàn thành")}</small>
-                          </>
-                        ) : (
-                          "—"
                         )}
                       </td>
                       <td><span className={`issue-badge ${badgeClass}`}>{issue}</span></td>
@@ -2012,7 +2077,7 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
         ) : (
           <div className="empty-students">
             <GraduationCap size={28} />
-            <strong>{students.length ? `Chưa có sinh viên nào trong lớp "${selectedClassTab}"` : "Chưa có tài khoản sinh viên"}</strong>
+            <strong>{students.length ? `Chưa có học sinh nào trong lớp "${selectedClassTab}"` : "Chưa có tài khoản học sinh"}</strong>
             <span>{students.length ? "Chọn tab khác hoặc tải thêm file danh sách cho lớp này." : "Tải file Excel danh sách ở trên để tạo đợt đầu tiên."}</span>
           </div>
         )}
@@ -2051,7 +2116,7 @@ function ClassAccessControl({ availableClasses = [], unlockedClasses = null, onC
       <div className="class-access-header">
         <div>
           <span className="field-label">Mở / Khóa bài tập theo từng lớp</span>
-          <p>Chọn mở hoặc khóa cho từng lớp học. Sinh viên lớp bị khóa sẽ không thể vào làm bài.</p>
+          <p>Chọn mở hoặc khóa cho từng lớp học. Học sinh lớp bị khóa sẽ không thể vào làm bài.</p>
         </div>
         {availableClasses.length > 0 && (
           <div className="class-access-quick-actions">
@@ -2077,7 +2142,7 @@ function ClassAccessControl({ availableClasses = [], unlockedClasses = null, onC
 
       {availableClasses.length === 0 ? (
         <div className="class-access-empty">
-          <span>Chưa có lớp nào trong danh sách. Bộ từ này mặc định sẽ mở cho tất cả các lớp khi bạn tạo sinh viên.</span>
+          <span>Chưa có lớp nào trong danh sách. Bộ từ này mặc định sẽ mở cho tất cả các lớp khi bạn tạo học sinh.</span>
         </div>
       ) : (
         <div className="class-access-list">
@@ -2156,9 +2221,9 @@ function CreateDeckView({
     <div className="create-deck-view">
       <div className="create-deck-head">
         <div>
-          <div className="eyebrow">Khu vực giảng viên</div>
+          <div className="eyebrow">Khu vực giáo viên</div>
           <h1>Tạo bộ từ mới từ PDF</h1>
-          <p>Tải file PDF danh sách từ vựng lên hệ thống để tạo bài tập cho sinh viên. Xem quy cách định dạng file chuẩn bên dưới.</p>
+          <p>Tải file PDF danh sách từ vựng lên hệ thống để tạo bài tập cho học sinh. Xem quy cách định dạng file chuẩn bên dưới.</p>
         </div>
       </div>
 
@@ -2593,7 +2658,7 @@ function DeckMaxAttemptsSettings({ maxAttempts, onChange, disabled }) {
   const [customValue, setCustomValue] = useState("");
 
   const options = [
-    { value: null, title: "Không giới hạn", desc: "Sinh viên có thể luyện tự do nhiều lần" },
+    { value: null, title: "Không giới hạn", desc: "Học sinh có thể luyện tự do nhiều lần" },
     { value: 1, title: "1 lần duy nhất", desc: "Kiểm tra nghiêm ngặt (chỉ làm 1 lần)" },
     { value: 2, title: "2 lần", desc: "Tối đa 2 lượt làm bài" },
     { value: 3, title: "3 lần", desc: "Tối đa 3 lượt làm bài" },
@@ -2706,7 +2771,7 @@ function HomeView({
       <div className="mobile-deck-label">Bộ từ đang chọn</div>
       <div className="home-head">
         <div>
-          <div className="eyebrow">{canManage ? "Thiết lập bài tập" : "Bài giảng viên đã giao"}</div>
+          <div className="eyebrow">{canManage ? "Thiết lập bài tập" : "Bài giáo viên đã giao"}</div>
           <h1>{deck.title}</h1>
           <p>{deck.sourceFileName || "Bộ từ vựng của lớp"}</p>
         </div>
@@ -2752,7 +2817,7 @@ function HomeView({
         <>
           <section className="assignment-panel">
             <div className="section-title-row">
-              <div><span className="eyebrow">Thể loại làm bài</span><h2>Giảng viên chọn cho sinh viên</h2></div>
+              <div><span className="eyebrow">Thể loại làm bài</span><h2>Giáo viên chọn cho học sinh</h2></div>
               {isUpdatingMode && <span className="points-rule"><LoaderCircle className="spin" size={15} /> Đang lưu…</span>}
             </div>
             <div className="mode-selector" role="group" aria-label="Chọn thể loại làm bài">
@@ -2838,8 +2903,8 @@ function HomeView({
             </h2>
             <p>
               {isExpired
-                ? "Giảng viên đã cài đặt thời hạn cho bài tập này đối với lớp của bạn và hiện tại bài đã bị khóa. Vui lòng liên hệ giảng viên nếu bạn cần gia hạn làm bù."
-                : "Giảng viên đang khóa bộ từ này đối với lớp của bạn. Hãy liên hệ với giảng viên để được mở quyền vào làm bài."}
+                ? "Giáo viên đã cài đặt thời hạn cho bài tập này đối với lớp của bạn và hiện tại bài đã bị khóa. Vui lòng liên hệ giáo viên nếu bạn cần gia hạn làm bù."
+                : "Giáo viên đang khóa bộ từ này đối với lớp của bạn. Hãy liên hệ với giáo viên để được mở quyền vào làm bài."}
             </p>
           </div>
         </div>
@@ -2850,7 +2915,7 @@ function HomeView({
             <div className="eyebrow">Đã hoàn thành bài kiểm tra</div>
             <h2>Bạn đã hết số lần làm bài cho phép ({studentAttempts}/{deck.maxAttempts} lần)</h2>
             <p>
-              Giảng viên đã cài đặt giới hạn số lần làm bài cho bài kiểm tra này là {deck.maxAttempts} lần. Bạn đã hoàn thành bài thi và điểm số của bạn đã được ghi nhận vào hệ thống.
+              Giáo viên đã cài đặt giới hạn số lần làm bài cho bài kiểm tra này là {deck.maxAttempts} lần. Bạn đã hoàn thành bài thi và điểm số của bạn đã được ghi nhận vào hệ thống.
             </p>
           </div>
         </div>
@@ -2899,8 +2964,8 @@ function ImportView({ draft, availableClasses = [], isSaving, connection, onBack
       <input id="deck-title" className="title-input" value={draft.title} maxLength={120} onChange={(event) => onChangeTitle(event.target.value)} />
 
       <div className="import-mode-section">
-        <div><span className="field-label">Thể loại giao cho sinh viên</span><p>Sinh viên sẽ làm bài theo thể loại giảng viên chọn (vẫn chọn 2 chế độ như thường).</p></div>
-        <div className="mode-selector compact" role="group" aria-label="Thể loại giao cho sinh viên">
+        <div><span className="field-label">Thể loại giao cho học sinh</span><p>Học sinh sẽ làm bài theo thể loại giáo viên chọn (vẫn chọn 2 chế độ như thường).</p></div>
+        <div className="mode-selector compact" role="group" aria-label="Thể loại giao cho học sinh">
           {PRACTICE_MODES.map((mode) => {
             const Icon = mode.icon;
             const selected = draft.practiceMode === mode.id;
@@ -2910,7 +2975,7 @@ function ImportView({ draft, availableClasses = [], isSaving, connection, onBack
       </div>
 
       <div className="import-attempts-section">
-        <div><span className="field-label">Số lần luyện / làm bài cho phép</span><p>Cài đặt số lần làm bài tối đa cho mỗi sinh viên ở bài kiểm tra này.</p></div>
+        <div><span className="field-label">Số lần luyện / làm bài cho phép</span><p>Cài đặt số lần làm bài tối đa cho mỗi học sinh ở bài kiểm tra này.</p></div>
         <DeckMaxAttemptsSettings
           maxAttempts={draft.maxAttempts}
           onChange={onChangeMaxAttempts}
@@ -2960,7 +3025,7 @@ function StudyView({ study, currentWord, quizChoices, typingInputRef, isFullscre
         <div className="session-points"><Sparkles size={18} /><span>Điểm phiên</span><strong>{study.score}</strong></div>
       </div>
       <div className="progress-line"><span style={{ width: `${progress}%` }} /></div>
-      <div className="assigned-study-mode"><AssignedIcon size={18} /><span>Giảng viên đã giao</span><strong>{assignedMode.title}</strong></div>
+      <div className="assigned-study-mode"><AssignedIcon size={18} /><span>Giáo viên đã giao</span><strong>{assignedMode.title}</strong></div>
       {!isFullscreen && (
         <div className={`fullscreen-violation-alert ${study.violationCount > 0 ? "is-violated" : ""}`}>
           <div className="alert-content">

@@ -55,7 +55,7 @@ export default async function handler(request, response) {
     .maybeSingle();
 
   if (profile?.role !== "instructor") {
-    return response.status(403).json({ error: "Chỉ giảng viên mới được đặt lại mật khẩu sinh viên." });
+    return response.status(403).json({ error: "Chỉ giáo viên mới được đặt lại mật khẩu học sinh." });
   }
 
   const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
@@ -73,7 +73,7 @@ export default async function handler(request, response) {
 
   const { data: studentsToReset, error: fetchError } = await query;
   if (fetchError || !studentsToReset?.length) {
-    return response.status(400).json({ error: "Không tìm thấy tài khoản sinh viên cần đặt lại mật khẩu." });
+    return response.status(400).json({ error: "Không tìm thấy tài khoản học sinh cần đặt lại mật khẩu." });
   }
 
   const updated = [];
@@ -99,12 +99,12 @@ export default async function handler(request, response) {
         password: newPassword,
       });
     } catch (err) {
-      console.error("Lỗi đặt lại mật khẩu sinh viên:", err);
+      console.error("Lỗi đặt lại mật khẩu học sinh:", err);
     }
   }
 
   return response.status(200).json({
-    message: `Đã đặt lại mật khẩu cho ${updated.length} sinh viên.`,
+    message: `Đã đặt lại mật khẩu cho ${updated.length} học sinh.`,
     updated,
   });
 }

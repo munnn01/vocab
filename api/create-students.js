@@ -58,14 +58,14 @@ function cleanWorkbook(value) {
 
 function cleanStudents(value) {
   if (!Array.isArray(value) || value.length < 1 || value.length > MAX_STUDENTS) {
-    throw new Error(`Danh sách phải có từ 1 đến ${MAX_STUDENTS} sinh viên.`);
+    throw new Error(`Danh sách phải có từ 1 đến ${MAX_STUDENTS} học sinh.`);
   }
   return value.map((student) => {
     const displayName = String(student?.displayName || "").trim().slice(0, 120);
     const className = String(student?.className || "").trim().slice(0, 80);
     const rowNumber = Number(student?.rowNumber);
     if (!displayName || !className || !Number.isInteger(rowNumber) || rowNumber < 2) {
-      throw new Error("Mỗi sinh viên cần có họ tên, lớp và dòng tương ứng trong file Excel.");
+      throw new Error("Mỗi học sinh cần có họ tên, lớp và dòng tương ứng trong file Excel.");
     }
     return { displayName, className, rowNumber };
   });
@@ -178,7 +178,7 @@ export default async function handler(request, response) {
   }
 
   if (profile.role !== "instructor") {
-    return response.status(403).json({ error: `Tài khoản của bạn có vai trò "${profile.role}", chỉ giảng viên mới được tạo tài khoản sinh viên.` });
+    return response.status(403).json({ error: `Tài khoản của bạn có vai trò "${profile.role}", chỉ giáo viên mới được tạo tài khoản học sinh.` });
   }
 
   const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
@@ -262,6 +262,6 @@ export default async function handler(request, response) {
     await Promise.allSettled(accounts.map((account) => admin.auth.admin.deleteUser(account.id)));
     await admin.from("student_rosters").delete().eq("id", roster.id);
     console.error("create-students accounts", error);
-    return response.status(500).json({ error: error?.message || "Không thể tạo tài khoản sinh viên." });
+    return response.status(500).json({ error: error?.message || "Không thể tạo tài khoản học sinh." });
   }
 }

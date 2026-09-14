@@ -95,6 +95,27 @@ describe("student roster helpers", () => {
     expect(sheet).toContain("Có – thoát toàn màn hình");
   });
 
+  it("supports dynamic per-deck score columns in results export", () => {
+    const bytes = createRosterBytes();
+    const columns = [
+      { key: "deck_deck1", header: "Unit 1 Family", width: 18, type: "number" },
+      { key: "deck_deck2", header: "Unit 2 Jobs", width: 18, type: "number" },
+      { key: "practiceCount", header: "Số lần luyện", width: 14, type: "number" },
+      { key: "issue", header: "Lỗi trong quá trình làm bài", width: 30 },
+    ];
+    const output = buildRosterResultsXlsx(workbookFrom(bytes), [
+      { rowNumber: 2, deck_deck1: 95, deck_deck2: 88, practiceCount: 2, issue: "Không" },
+      { rowNumber: 3, deck_deck1: 60, deck_deck2: 75, practiceCount: 1, issue: "Có – thoát toàn màn hình" },
+    ], columns);
+    const sheet = strFromU8(unzipSync(output)["xl/worksheets/sheet1.xml"]);
+    expect(sheet).toContain("Unit 1 Family");
+    expect(sheet).toContain("Unit 2 Jobs");
+    expect(sheet).toContain("<v>95</v>");
+    expect(sheet).toContain("<v>88</v>");
+    expect(sheet).toContain("<v>60</v>");
+    expect(sheet).toContain("<v>75</v>");
+  });
+
   it("handles Target before Id in rels and numeric XML entities in inlineStr (e.g. 12A2 format)", async () => {
     const bytes = zipSync({
       "xl/workbook.xml": strToU8('<workbook><sheets><sheet name="Danh s&#225;ch l&#7899;p 12A2" sheetId="1" r:id="rId1"/></sheets></workbook>'),

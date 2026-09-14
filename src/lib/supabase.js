@@ -70,11 +70,11 @@ export async function signIn({ role, identifier, password }) {
   const account = await loadProfile(data.user);
   if (account.role !== role) {
     await supabase.auth.signOut();
-    throw new Error(`Tài khoản này không phải tài khoản ${role === "instructor" ? "giảng viên" : "sinh viên"}.`);
+    throw new Error(`Tài khoản này không phải tài khoản ${role === "instructor" ? "giáo viên" : "học sinh"}.`);
   }
   if (role === "student" && !account.instructorId) {
     await supabase.auth.signOut();
-    throw new Error("Tài khoản sinh viên chưa được gán cho giảng viên.");
+    throw new Error("Tài khoản học sinh chưa được gán cho giáo viên.");
   }
   return account;
 }
@@ -246,7 +246,7 @@ export async function createStudentAccounts({ students, workbook }) {
     body: JSON.stringify({ students, workbook }),
   });
   const result = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(result.error || "Không thể tạo tài khoản sinh viên.");
+  if (!response.ok) throw new Error(result.error || "Không thể tạo tài khoản học sinh.");
   return result;
 }
 
