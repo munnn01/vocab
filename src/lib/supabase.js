@@ -106,7 +106,6 @@ export async function loadStudentResults() {
     .from("study_sessions")
     .select("id,owner_id,deck_id,mode,score,correct_count,total_count,completed,created_at,decks(title)")
     .neq("owner_id", user.id)
-    .eq("completed", true)
     .order("created_at", { ascending: false })
     .limit(500);
 
@@ -121,6 +120,7 @@ export async function loadStudentResults() {
     score: session.score,
     correct: session.correct_count,
     total: session.total_count,
+    completed: session.completed,
     completedAt: session.created_at,
   }));
 }
@@ -156,7 +156,7 @@ export async function loadLibrary() {
     await Promise.all([
       supabase
         .from("decks")
-        .select("id,title,source_file_name,word_count,created_at,words(id,term,part_of_speech,meaning,position)")
+        .select("id,title,source_file_name,word_count,practice_mode,created_at,words(id,term,part_of_speech,meaning,position)")
         .order("created_at", { ascending: false }),
       supabase
         .from("study_sessions")
@@ -175,6 +175,7 @@ export async function loadLibrary() {
       title: deck.title,
       sourceFileName: deck.source_file_name,
       wordCount: deck.word_count,
+      practiceMode: deck.practice_mode || "typing",
       createdAt: deck.created_at,
       words: [...(deck.words || [])]
         .sort((a, b) => a.position - b.position)
@@ -184,7 +185,7 @@ export async function loadLibrary() {
   };
 }
 
-export async function createDeck({ title, sourceFileName, words }) {
+export async function createDeck({ title, sourceFileName, practiceMode, words }) {
   const user = await requireUser();
   const { data: deck, error: deckError } = await supabase
     .from("decks")
@@ -193,8 +194,9 @@ export async function createDeck({ title, sourceFileName, words }) {
       title,
       source_file_name: sourceFileName,
       word_count: words.length,
+      practice_mode: practiceMode,
     })
-    .select("id,title,source_file_name,word_count,created_at")
+    .select("id,title,source_file_name,word_count,practice_mode,created_at")
     .single();
 
   if (deckError) throw deckError;
@@ -223,9 +225,20 @@ export async function createDeck({ title, sourceFileName, words }) {
     title: deck.title,
     sourceFileName: deck.source_file_name,
     wordCount: deck.word_count,
+    practiceMode: deck.practice_mode,
     createdAt: deck.created_at,
     words: [...savedWords].sort((a, b) => a.position - b.position).map(toClientWord),
   };
+}
+
+export async function updateDeckPracticeMode(deckId, practiceMode) {
+  await requireUser();
+  if (!["typing", "quiz"].includes(practiceMode)) throw new Error("Thể loại làm bài không hợp lệ.");
+  const { error } = await supabase
+    .from("decks")
+    .update({ practice_mode: practiceMode })
+    .eq("id", deckId);
+  if (error) throw error;
 }
 
 export async function saveStudySession({ deckId, mode, score, correct, total, completed }) {

@@ -2,13 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft, BookOpen, BrainCircuit, Check, ChevronRight, CircleAlert, FileText,
   Download, Eye, EyeOff, FileUp, Flame, GraduationCap, Keyboard, Layers3,
-  LoaderCircle, LogOut, Maximize2, Minimize2, MousePointerClick, Plus,
+  LoaderCircle, LogOut, Maximize2, Minimize2, Plus,
   RotateCcw, ShieldCheck, Sparkles, Trash2, Trophy, UserPlus, Users, X,
 } from "lucide-react";
 import { DEMO_WORDS, POS_LABELS, makeQuizChoices, normalizeAnswer, shuffle } from "./lib/vocabulary";
 import {
   createDeck, createStudentAccounts, getCurrentAccount, isSupabaseConfigured,
   loadLibrary, loadStudentResults, loadStudents, saveStudySession, signIn, signOut,
+  updateDeckPracticeMode,
 } from "./lib/supabase";
 import { createDemoStudentAccounts, downloadStudentAccountsXlsx } from "./lib/studentAccounts";
 
@@ -18,17 +19,18 @@ const DEMO_DECK = {
   sourceFileName: "Mẫu new(adj): mới",
   wordCount: DEMO_WORDS.length,
   words: DEMO_WORDS,
+  practiceMode: "typing",
   isDemo: true,
 };
 
-const MODES = [
-  { id: "flashcard", title: "Flashcard", description: "Lật thẻ và tự đánh giá", icon: Layers3, accent: "lime" },
-  { id: "typing", title: "Gõ từ", description: "Nhìn nghĩa, tự gõ đáp án", icon: Keyboard, accent: "blue" },
+const PRACTICE_MODES = [
+  { id: "typing", title: "Điền từ", description: "Nhìn nghĩa và gõ từ tiếng Anh", icon: Keyboard, accent: "blue" },
   { id: "quiz", title: "Trắc nghiệm", description: "Đáp án nhiễu cùng loại từ", icon: BrainCircuit, accent: "coral" },
 ];
 
 function formatMode(mode) {
-  return MODES.find((item) => item.id === mode)?.title || "Luyện tập";
+  if (mode === "flashcard") return "Flashcard";
+  return PRACTICE_MODES.find((item) => item.id === mode)?.title || "Luyện tập";
 }
 
 function deckMeta(deck) {
@@ -40,6 +42,8 @@ export function App() {
   const typingInputRef = useRef(null);
   const toastTimerRef = useRef(null);
   const answerTimerRef = useRef(null);
+  const fullscreenSeenRef = useRef(false);
+  const suppressFullscreenPenaltyRef = useRef(false);
   const [view, setView] = useState("home");
   const [account, setAccount] = useState(isSupabaseConfigured ? null : {
     id: "demo-instructor",
@@ -55,6 +59,7 @@ export function App() {
   const [generatedAccounts, setGeneratedAccounts] = useState([]);
   const [isGeneratingAccounts, setIsGeneratingAccounts] = useState(false);
   const [isRefreshingResults, setIsRefreshingResults] = useState(false);
+  const [isUpdatingMode, setIsUpdatingMode] = useState(false);
   const [selectedDeckId, setSelectedDeckId] = useState("demo");
   const [connection, setConnection] = useState(isSupabaseConfigured ? "connecting" : "demo");
   const [importProgress, setImportProgress] = useState(0);
@@ -156,10 +161,28 @@ export function App() {
     if (view === "study" && study?.mode === "typing" && !study.feedback) typingInputRef.current?.focus();
   }, [view, study?.mode, study?.index, study?.feedback]);
 
-  const startStudy = useCallback((mode = "flashcard") => {
+  const startStudy = useCallback(() => {
+    if (account?.role !== "student") {
+      showToast("Giảng viên chỉ thiết lập bài; tài khoản sinh viên mới có thể làm bài.");
+      return;
+    }
     if (!selectedDeck?.words.length) {
       showToast("Bộ từ này chưa có từ để học.");
       return;
+    }
+    const mode = PRACTICE_MODES.some((item) => item.id === selectedDeck.practiceMode)
+      ? selectedDeck.practiceMode
+      : "typing";
+    suppressFullscreenPenaltyRef.current = false;
+    fullscreenSeenRef.current = Boolean(document.fullscreenElement);
+    if (!document.fullscreenElement) {
+      try {
+        void document.documentElement.requestFullscreen().catch(() => {
+          showToast("Hãy bấm ‘Vào toàn màn hình’ trước khi tiếp tục làm bài.");
+        });
+      } catch {
+        showToast("Hãy bấm ‘Vào toàn màn hình’ trước khi tiếp tục làm bài.");
+      }
     }
     setStudy({
       deckId: selectedDeck.id,
@@ -170,43 +193,47 @@ export function App() {
       score: 0,
       correct: 0,
       answered: 0,
-      flipped: false,
       feedback: null,
       input: "",
     });
     setView("study");
     setLastResult(null);
-  }, [selectedDeck, showToast]);
+  }, [account?.role, selectedDeck, showToast]);
 
   useEffect(() => {
     const context = document.modelContext;
-    if (!context?.registerTool) return undefined;
+    if (!context?.registerTool || account?.role !== "student") return undefined;
     const lifecycle = new AbortController();
     try {
       void Promise.resolve(context.registerTool({
         name: "start_vocabulary_practice",
         title: "Bắt đầu luyện từ vựng",
-        description: "Bắt đầu học bộ từ đang chọn bằng flashcard, gõ từ hoặc trắc nghiệm.",
+        description: "Bắt đầu bài từ vựng theo thể loại mà giảng viên đã giao.",
         inputSchema: {
           type: "object",
-          properties: { mode: { type: "string", enum: ["flashcard", "typing", "quiz"] } },
-          required: ["mode"],
+          properties: {},
           additionalProperties: false,
         },
         annotations: { readOnlyHint: false, untrustedContentHint: false },
-        execute(input) {
-          if (!MODES.some((item) => item.id === input?.mode)) throw new Error("Chế độ học không hợp lệ.");
-          startStudy(input.mode);
-          return { deck: selectedDeck.title, mode: input.mode, status: "started" };
+        execute() {
+          startStudy();
+          return { deck: selectedDeck.title, mode: selectedDeck.practiceMode || "typing", status: "started" };
         },
       }, { signal: lifecycle.signal })).catch(() => {});
     } catch {
       return undefined;
     }
     return () => lifecycle.abort();
-  }, [selectedDeck, startStudy]);
+  }, [account?.role, selectedDeck, startStudy]);
 
   const finishStudy = useCallback((finalStudy, completed = true) => {
+    suppressFullscreenPenaltyRef.current = true;
+    fullscreenSeenRef.current = false;
+    if (document.fullscreenElement) {
+      void document.exitFullscreen().finally(() => { suppressFullscreenPenaltyRef.current = false; });
+    } else {
+      suppressFullscreenPenaltyRef.current = false;
+    }
     const result = {
       deckTitle: finalStudy.deckTitle,
       mode: finalStudy.mode,
@@ -241,8 +268,34 @@ export function App() {
     }).catch((error) => console.error("Không thể lưu phiên học", error));
   }, []);
 
+  useEffect(() => {
+    if (view !== "study" || !study || account?.role !== "student") return undefined;
+    if (document.fullscreenElement) fullscreenSeenRef.current = true;
+
+    const penalizeFullscreenExit = () => {
+      if (document.fullscreenElement) {
+        fullscreenSeenRef.current = true;
+        return;
+      }
+      if (!fullscreenSeenRef.current || suppressFullscreenPenaltyRef.current) return;
+      fullscreenSeenRef.current = false;
+      window.clearTimeout(answerTimerRef.current);
+      finishStudy({ ...study, score: study.score - 5 }, false);
+      setLeaveDialog(false);
+      setView("home");
+      showToast("Đã thoát toàn màn hình: trừ 5 điểm và kết thúc bài.");
+    };
+
+    document.addEventListener("fullscreenchange", penalizeFullscreenExit);
+    return () => document.removeEventListener("fullscreenchange", penalizeFullscreenExit);
+  }, [account?.role, finishStudy, showToast, study, view]);
+
   const answerCurrent = useCallback((isCorrect) => {
     if (!study || study.feedback) return;
+    if (account?.role === "student" && !document.fullscreenElement) {
+      showToast("Bạn cần vào toàn màn hình trước khi trả lời.");
+      return;
+    }
     const nextStudy = {
       ...study,
       feedback: isCorrect ? "correct" : "wrong",
@@ -257,22 +310,14 @@ export function App() {
         finishStudy(nextStudy, true);
         return;
       }
-      setStudy({ ...nextStudy, index: nextStudy.index + 1, flipped: false, feedback: null, input: "" });
+      setStudy({ ...nextStudy, index: nextStudy.index + 1, feedback: null, input: "" });
     }, 720);
-  }, [finishStudy, study]);
+  }, [account?.role, finishStudy, showToast, study]);
 
   useEffect(() => {
     if (view !== "study" || !study) return undefined;
     const handleKey = (event) => {
       const isTyping = ["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName);
-      if (study.mode === "flashcard" && event.code === "Space") {
-        event.preventDefault();
-        setStudy((current) => ({ ...current, flipped: !current.flipped }));
-      }
-      if (study.mode === "flashcard" && study.flipped && !study.feedback) {
-        if (event.key === "1") answerCurrent(false);
-        if (event.key === "2") answerCurrent(true);
-      }
       if (study.mode === "quiz" && !isTyping && /^[1-4]$/.test(event.key)) {
         const choice = quizChoices[Number(event.key) - 1];
         if (choice) answerCurrent(choice === currentWord.term);
@@ -296,6 +341,7 @@ export function App() {
         words: parsed.entries,
         rejected: parsed.rejected,
         pageCount: parsed.pageCount,
+        practiceMode: "typing",
       });
       setView("import");
     } catch (error) {
@@ -312,7 +358,7 @@ export function App() {
     try {
       let savedDeck;
       if (isSupabaseConfigured && connection === "connected") {
-        savedDeck = await createDeck({ title: importDraft.title.trim(), sourceFileName: importDraft.fileName, words: importDraft.words });
+        savedDeck = await createDeck({ title: importDraft.title.trim(), sourceFileName: importDraft.fileName, practiceMode: importDraft.practiceMode, words: importDraft.words });
       } else {
         savedDeck = {
           id: `local-${crypto.randomUUID()}`,
@@ -320,6 +366,7 @@ export function App() {
           sourceFileName: importDraft.fileName,
           wordCount: importDraft.words.length,
           words: importDraft.words,
+          practiceMode: importDraft.practiceMode,
           isTemporary: true,
         };
       }
@@ -340,10 +387,6 @@ export function App() {
 
   function removeDraftWord(id) {
     setImportDraft((draft) => ({ ...draft, words: draft.words.filter((word) => word.id !== id) }));
-  }
-
-  function changeStudyMode(mode) {
-    setStudy((current) => ({ ...current, mode, flipped: false, feedback: null, input: "" }));
   }
 
   function submitTyping(event) {
@@ -368,6 +411,27 @@ export function App() {
       else await document.documentElement.requestFullscreen();
     } catch {
       showToast("Trình duyệt này chưa cho phép chế độ toàn màn hình.");
+    }
+  }
+
+  async function handleDeckPracticeMode(mode) {
+    if (!PRACTICE_MODES.some((item) => item.id === mode) || !selectedDeck) return;
+    const previousMode = selectedDeck.practiceMode || "typing";
+    setDecks((current) => current.map((deck) => deck.id === selectedDeck.id ? { ...deck, practiceMode: mode } : deck));
+    if (selectedDeck.isDemo || selectedDeck.isTemporary) {
+      showToast(`Đã chọn ${formatMode(mode)} cho bộ từ này.`);
+      return;
+    }
+    setIsUpdatingMode(true);
+    try {
+      await updateDeckPracticeMode(selectedDeck.id, mode);
+      showToast(`Sinh viên sẽ làm bài theo dạng ${formatMode(mode)}.`);
+    } catch (error) {
+      console.error("Không thể cập nhật thể loại làm bài", error);
+      setDecks((current) => current.map((deck) => deck.id === selectedDeck.id ? { ...deck, practiceMode: previousMode } : deck));
+      showToast("Chưa cập nhật được thể loại làm bài.");
+    } finally {
+      setIsUpdatingMode(false);
     }
   }
 
@@ -471,27 +535,31 @@ export function App() {
             <span><b>{account.displayName}</b><small>{canManage ? "Giảng viên" : account.className || "Sinh viên"}</small></span>
           </span>
           {canManage && <button className="icon-button student-manage-shortcut" type="button" onClick={() => setView((current) => current === "students" ? "home" : "students")} aria-label={view === "students" ? "Mở khu vực học" : "Quản lý sinh viên"} title="Quản lý sinh viên"><Users size={18} /></button>}
-          <button className="icon-text-button" type="button" onClick={toggleFullscreen}>
+          {!canManage && view !== "study" && <button className="icon-text-button" type="button" onClick={toggleFullscreen}>
             {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
             {isFullscreen ? "Thu nhỏ" : "Toàn màn hình"}
-          </button>
+          </button>}
           {!account.demo && <button className="icon-button" type="button" onClick={handleSignOut} aria-label="Đăng xuất" title="Đăng xuất"><LogOut size={18} /></button>}
         </div>
       </header>
 
       <main className="workspace">
         <aside className="sidebar">
-          <div className="eyebrow">Tiến độ gần nhất</div>
-          <div className="score-card">
+          <div className="eyebrow">{canManage ? "Quản lý lớp học" : "Tiến độ gần nhất"}</div>
+          {canManage ? <div className="score-card teacher-sidebar-card">
+            <div><FileText size={22} /> Bộ từ đã tạo</div>
+            <strong>{uploadedDecks.length} <small>bộ từ</small></strong>
+            <p>{totalWords ? `${totalWords} từ đã sẵn sàng giao cho sinh viên.` : "Nhập PDF đầu tiên để tạo bài cho lớp."}</p>
+          </div> : <div className="score-card">
             <div><Flame size={22} /> Điểm phiên</div>
             <strong>{lastSession?.score ?? 0} <small>điểm</small></strong>
             <div className="score-track"><span style={{ width: `${Math.min(100, Math.max(8, lastSession?.score || 8))}%` }} /></div>
-            <p>{totalWords ? `${totalWords} từ đã lưu trong ${uploadedDecks.length} bộ từ.` : "Nhập PDF đầu tiên để bắt đầu lưu tiến độ."}</p>
-          </div>
+            <p>{lastSession ? "Kết quả của lần làm bài gần nhất." : "Hoàn thành bài đầu tiên để lưu điểm."}</p>
+          </div>}
 
           <nav className="sidebar-nav" aria-label="Khu vực ứng dụng">
-            <button className={view !== "students" ? "active" : ""} type="button" onClick={() => setView("home")}><BookOpen size={17} /> Học từ vựng</button>
-            {canManage && <button className={view === "students" ? "active" : ""} type="button" onClick={() => setView("students")}><Users size={17} /> Tài khoản sinh viên <span>{students.length}</span></button>}
+            <button className={view !== "students" ? "active" : ""} type="button" onClick={() => setView("home")}><BookOpen size={17} /> {canManage ? "Tạo bộ từ" : "Bài tập của tôi"}</button>
+            {canManage && <button className={view === "students" ? "active" : ""} type="button" onClick={() => setView("students")}><Users size={17} /> Tài khoản & điểm <span>{students.length}</span></button>}
           </nav>
 
           <div className="section-heading">
@@ -514,11 +582,11 @@ export function App() {
         </aside>
 
         <section className="content-stage">
-          {view === "home" && <HomeView deck={selectedDeck} canManage={canManage} isImporting={isImporting} importProgress={importProgress} onPickPdf={() => fileInputRef.current?.click()} onStart={startStudy} />}
+          {view === "home" && <HomeView deck={selectedDeck} canManage={canManage} isImporting={isImporting} isUpdatingMode={isUpdatingMode} importProgress={importProgress} onPickPdf={() => fileInputRef.current?.click()} onStart={startStudy} onModeChange={handleDeckPracticeMode} />}
           {view === "students" && canManage && <InstructorView students={students} studentResults={studentResults} generatedAccounts={generatedAccounts} isGenerating={isGeneratingAccounts} isRefreshingResults={isRefreshingResults} isDemo={Boolean(account.demo)} onGenerate={handleGenerateStudents} onExport={handleExportStudents} onRefreshResults={handleRefreshStudentResults} />}
-          {view === "import" && importDraft && <ImportView draft={importDraft} isSaving={isSaving} connection={connection} onBack={() => setView("home")} onChangeTitle={(title) => setImportDraft((draft) => ({ ...draft, title }))} onRemoveWord={removeDraftWord} onSave={saveImport} />}
-          {view === "study" && study && currentWord && <StudyView study={study} currentWord={currentWord} quizChoices={quizChoices} typingInputRef={typingInputRef} onBack={() => setLeaveDialog(true)} onModeChange={changeStudyMode} onFlip={() => setStudy((current) => ({ ...current, flipped: !current.flipped }))} onAnswer={answerCurrent} onInput={(input) => setStudy((current) => ({ ...current, input }))} onTypingSubmit={submitTyping} />}
-          {view === "results" && lastResult && <ResultView result={lastResult} onAgain={() => startStudy(lastResult.mode)} onHome={() => setView("home")} />}
+          {view === "import" && importDraft && <ImportView draft={importDraft} isSaving={isSaving} connection={connection} onBack={() => setView("home")} onChangeTitle={(title) => setImportDraft((draft) => ({ ...draft, title }))} onChangePracticeMode={(practiceMode) => setImportDraft((draft) => ({ ...draft, practiceMode }))} onRemoveWord={removeDraftWord} onSave={saveImport} />}
+          {view === "study" && study && currentWord && <StudyView study={study} currentWord={currentWord} quizChoices={quizChoices} typingInputRef={typingInputRef} isFullscreen={isFullscreen} onBack={() => setLeaveDialog(true)} onFullscreen={toggleFullscreen} onAnswer={answerCurrent} onInput={(input) => setStudy((current) => ({ ...current, input }))} onTypingSubmit={submitTyping} />}
+          {view === "results" && lastResult && <ResultView result={lastResult} onAgain={startStudy} onHome={() => setView("home")} />}
         </section>
       </main>
 
@@ -574,9 +642,9 @@ function LoginView({ onLogin }) {
         <section className="login-intro">
           <span className="brand-mark"><Layers3 size={23} /></span>
           <div className="eyebrow">Từ Vựng Mỗi Ngày</div>
-          <h1>Một lớp học.<br /><span>Ba cách ghi nhớ.</span></h1>
-          <p>Giảng viên đưa PDF lên, sinh viên đăng nhập bằng tài khoản được cấp và bắt đầu học ngay.</p>
-          <div className="login-features"><span><Check size={16} /> Flashcard</span><span><Check size={16} /> Gõ từ</span><span><Check size={16} /> Trắc nghiệm</span></div>
+          <h1>Một lớp học.<br /><span>Hai dạng bài rõ ràng.</span></h1>
+          <p>Giảng viên đưa PDF lên, chọn dạng bài và theo dõi điểm. Sinh viên chỉ cần đăng nhập để làm bài được giao.</p>
+          <div className="login-features"><span><Check size={16} /> Điền từ</span><span><Check size={16} /> Trắc nghiệm</span></div>
         </section>
         <form className="login-card" onSubmit={submit}>
           <div className="eyebrow">Đăng nhập</div>
@@ -614,7 +682,7 @@ function InstructorView({ students, studentResults, generatedAccounts, isGenerat
     }
     return latest;
   }, [studentResults]);
-  const completedStudentCount = latestResultByStudent.size;
+  const resultStudentCount = latestResultByStudent.size;
 
   async function submit(event) {
     event.preventDefault();
@@ -632,7 +700,7 @@ function InstructorView({ students, studentResults, generatedAccounts, isGenerat
         <div><div className="eyebrow">Khu vực giảng viên</div><h1>Tài khoản sinh viên</h1><p>Tạo theo lớp, tải một file Excel rồi cấp riêng cho từng sinh viên.</p></div>
         <div className="instructor-summary">
           <div className="student-count"><Users size={22} /><span><strong>{students.length}</strong> sinh viên đã tạo</span></div>
-          <div className="student-count score-count"><Trophy size={22} /><span><strong>{completedStudentCount}</strong> đã có điểm</span></div>
+          <div className="student-count score-count"><Trophy size={22} /><span><strong>{resultStudentCount}</strong> đã có kết quả</span></div>
         </div>
       </div>
 
@@ -669,25 +737,27 @@ function InstructorView({ students, studentResults, generatedAccounts, isGenerat
         <div className="table-title"><div><div className="eyebrow">Điểm học tập</div><h2>Kết quả mới nhất của sinh viên</h2><p>Điểm được ghi sau khi hoàn thành một bộ từ PDF. Bài học thử không được lưu.</p></div><button className="secondary-button password-toggle" type="button" onClick={onRefreshResults} disabled={isRefreshingResults}>{isRefreshingResults ? <LoaderCircle className="spin" size={17} /> : <RotateCcw size={17} />}{isRefreshingResults ? "Đang cập nhật…" : "Cập nhật điểm"}</button></div>
         {students.length ? <div className="student-table-wrap"><table className="student-table result-table"><thead><tr><th>Sinh viên</th><th>Tên đăng nhập</th><th>Lớp</th><th>Điểm gần nhất</th><th>Kết quả</th><th>Hoàn thành</th></tr></thead><tbody>{students.map((student) => {
           const result = latestResultByStudent.get(student.id);
-          return <tr key={student.id}><td>{student.displayName}</td><td><code>{student.username}</code></td><td>{student.className}</td><td>{result ? <span className="score-badge">{result.score} điểm</span> : <span className="no-result">Chưa làm</span>}</td><td>{result ? <><strong>{result.correct}/{result.total}</strong><small>{result.deckTitle || "Bộ từ"} · {formatMode(result.mode)}</small></> : "—"}</td><td>{result?.completedAt ? new Intl.DateTimeFormat("vi-VN", { dateStyle: "short", timeStyle: "short" }).format(new Date(result.completedAt)) : "—"}</td></tr>;
+          return <tr key={student.id}><td>{student.displayName}</td><td><code>{student.username}</code></td><td>{student.className}</td><td>{result ? <span className={`score-badge ${result.completed ? "" : "left-early"}`}>{result.score} điểm</span> : <span className="no-result">Chưa làm</span>}</td><td>{result ? <><strong>{result.completed ? `${result.correct}/${result.total}` : "Rời bài sớm"}</strong><small>{result.completed ? `${result.deckTitle || "Bộ từ"} · ${formatMode(result.mode)}` : "Đã trừ 5 điểm"}</small></> : "—"}</td><td>{result?.completedAt ? new Intl.DateTimeFormat("vi-VN", { dateStyle: "short", timeStyle: "short" }).format(new Date(result.completedAt)) : "—"}</td></tr>;
         })}</tbody></table></div> : <div className="empty-students"><GraduationCap size={28} /><strong>Chưa có tài khoản sinh viên</strong><span>Nhập tên lớp và số lượng ở trên để tạo đợt đầu tiên.</span></div>}
       </section>
     </div>
   );
 }
 
-function HomeView({ deck, canManage, isImporting, importProgress, onPickPdf, onStart }) {
+function HomeView({ deck, canManage, isImporting, isUpdatingMode, importProgress, onPickPdf, onStart, onModeChange }) {
   const posCounts = useMemo(() => {
     const counts = {};
     for (const word of deck.words) counts[word.partOfSpeech] = (counts[word.partOfSpeech] || 0) + 1;
     return Object.entries(counts);
   }, [deck]);
+  const assignedMode = PRACTICE_MODES.find((mode) => mode.id === deck.practiceMode) || PRACTICE_MODES[0];
+  const AssignedIcon = assignedMode.icon;
 
   return (
     <div className="home-view">
       <div className="mobile-deck-label">Bộ từ đang chọn</div>
       <div className="home-head">
-        <div><div className="eyebrow">Sẵn sàng luyện tập</div><h1>{deck.title}</h1><p>{deck.sourceFileName || "Bộ từ vựng của bạn"}</p></div>
+        <div><div className="eyebrow">{canManage ? "Thiết lập bài tập" : "Bài giảng viên đã giao"}</div><h1>{deck.title}</h1><p>{deck.sourceFileName || "Bộ từ vựng của lớp"}</p></div>
         {canManage && <button className="primary-button compact" type="button" onClick={onPickPdf} disabled={isImporting}>
           {isImporting ? <LoaderCircle className="spin" size={18} /> : <FileUp size={18} />}
           {isImporting ? `Đang đọc ${importProgress}%` : "Nhập PDF"}
@@ -695,33 +765,42 @@ function HomeView({ deck, canManage, isImporting, importProgress, onPickPdf, onS
       </div>
 
       <div className="deck-overview">
-        <div className="overview-main"><span className="overview-icon"><BookOpen size={28} /></span><div><strong>{deck.words.length}</strong><span>từ sẵn sàng học</span></div></div>
+        <div className="overview-main"><span className="overview-icon"><BookOpen size={28} /></span><div><strong>{deck.words.length}</strong><span>{canManage ? "từ trong bộ này" : "từ cần hoàn thành"}</span></div></div>
         <div className="pos-cloud">{posCounts.map(([pos, count]) => <span key={pos}>{POS_LABELS[pos]} <b>{count}</b></span>)}</div>
       </div>
 
-      <div className="section-title-row">
-        <div><span className="eyebrow">Chọn cách học</span><h2>Bắt đầu một phiên mới</h2></div>
-        <span className="points-rule">Đúng +10 · Sai −3 · Rời sớm −5</span>
-      </div>
-      <div className="mode-grid">
-        {MODES.map((mode, index) => {
-          const Icon = mode.icon;
-          return (
-            <button key={mode.id} className={`mode-card ${mode.accent}`} type="button" onClick={() => onStart(mode.id)}>
-              <span className="mode-number">0{index + 1}</span><span className="mode-icon"><Icon size={24} /></span>
-              <span className="mode-copy"><b>{mode.title}</b><small>{mode.description}</small></span><ChevronRight className="mode-arrow" size={20} />
-            </button>
-          );
-        })}
-      </div>
-      {canManage && <button className="drop-zone" type="button" onClick={onPickPdf}>
-        <span><FileText size={21} /></span><span><b>Có bộ từ mới?</b><small>Chọn PDF có định dạng: new(adj): mới</small></span><span className="drop-action">Chọn file PDF</span>
-      </button>}
+      {canManage ? <>
+        <section className="assignment-panel">
+          <div className="section-title-row">
+            <div><span className="eyebrow">Thể loại làm bài</span><h2>Giảng viên chọn cho sinh viên</h2></div>
+            {isUpdatingMode && <span className="points-rule"><LoaderCircle className="spin" size={15} /> Đang lưu…</span>}
+          </div>
+          <div className="mode-selector" role="group" aria-label="Chọn thể loại làm bài">
+            {PRACTICE_MODES.map((mode) => {
+              const Icon = mode.icon;
+              const selected = assignedMode.id === mode.id;
+              return <button key={mode.id} className={selected ? "active" : ""} type="button" aria-pressed={selected} onClick={() => onModeChange(mode.id)} disabled={isUpdatingMode}><span><Icon size={21} /></span><span><b>{mode.title}</b><small>{mode.description}</small></span>{selected && <Check size={19} />}</button>;
+            })}
+          </div>
+        </section>
+        <button className="drop-zone" type="button" onClick={onPickPdf}>
+          <span><FileText size={21} /></span><span><b>Tạo bộ từ mới từ PDF</b><small>Định dạng mỗi dòng: new(adj): mới</small></span><span className="drop-action">Chọn file PDF</span>
+        </button>
+      </> : <>
+        <div className="section-title-row">
+          <div><span className="eyebrow">Thể loại được giao</span><h2>{assignedMode.title}</h2></div>
+          <span className="points-rule">Đúng +10 · Sai −3 · Thoát −5</span>
+        </div>
+        <button className={`mode-card assigned-mode-card ${assignedMode.accent}`} type="button" onClick={onStart}>
+          <span className="mode-icon"><AssignedIcon size={25} /></span>
+          <span className="mode-copy"><b>Bắt đầu {assignedMode.title.toLowerCase()}</b><small>{assignedMode.description}. Bài sẽ tự chuyển sang toàn màn hình.</small></span><ChevronRight className="mode-arrow" size={21} />
+        </button>
+      </>}
     </div>
   );
 }
 
-function ImportView({ draft, isSaving, connection, onBack, onChangeTitle, onRemoveWord, onSave }) {
+function ImportView({ draft, isSaving, connection, onBack, onChangeTitle, onChangePracticeMode, onRemoveWord, onSave }) {
   return (
     <div className="import-view">
       <button className="back-link" type="button" onClick={onBack}><ArrowLeft size={18} /> Quay lại</button>
@@ -731,6 +810,17 @@ function ImportView({ draft, isSaving, connection, onBack, onChangeTitle, onRemo
       </div>
       <label className="field-label" htmlFor="deck-title">Tên bộ từ</label>
       <input id="deck-title" className="title-input" value={draft.title} maxLength={120} onChange={(event) => onChangeTitle(event.target.value)} />
+
+      <div className="import-mode-section">
+        <div><span className="field-label">Thể loại giao cho sinh viên</span><p>Sinh viên sẽ chỉ làm được thể loại giảng viên chọn.</p></div>
+        <div className="mode-selector compact" role="group" aria-label="Thể loại giao cho sinh viên">
+          {PRACTICE_MODES.map((mode) => {
+            const Icon = mode.icon;
+            const selected = draft.practiceMode === mode.id;
+            return <button key={mode.id} className={selected ? "active" : ""} type="button" aria-pressed={selected} onClick={() => onChangePracticeMode(mode.id)}><span><Icon size={19} /></span><span><b>{mode.title}</b></span>{selected && <Check size={17} />}</button>;
+          })}
+        </div>
+      </div>
 
       <div className="word-table-head"><span>Từ</span><span>Loại từ</span><span>Nghĩa</span><span /></div>
       <div className="word-table">
@@ -750,9 +840,11 @@ function ImportView({ draft, isSaving, connection, onBack, onChangeTitle, onRemo
   );
 }
 
-function StudyView({ study, currentWord, quizChoices, typingInputRef, onBack, onModeChange, onFlip, onAnswer, onInput, onTypingSubmit }) {
+function StudyView({ study, currentWord, quizChoices, typingInputRef, isFullscreen, onBack, onFullscreen, onAnswer, onInput, onTypingSubmit }) {
   const progress = ((study.index + 1) / study.items.length) * 100;
   const resultClass = study.feedback ? `feedback-${study.feedback}` : "";
+  const assignedMode = PRACTICE_MODES.find((mode) => mode.id === study.mode) || PRACTICE_MODES[0];
+  const AssignedIcon = assignedMode.icon;
 
   return (
     <div className={`study-view ${resultClass}`}>
@@ -762,25 +854,8 @@ function StudyView({ study, currentWord, quizChoices, typingInputRef, onBack, on
         <div className="session-points"><Sparkles size={18} /><span>Điểm phiên</span><strong>{study.score}</strong></div>
       </div>
       <div className="progress-line"><span style={{ width: `${progress}%` }} /></div>
-      <div className="mode-tabs" role="tablist" aria-label="Chế độ học">
-        {MODES.map((mode) => {
-          const Icon = mode.icon;
-          return <button key={mode.id} className={study.mode === mode.id ? "active" : ""} type="button" role="tab" aria-selected={study.mode === mode.id} onClick={() => onModeChange(mode.id)} disabled={Boolean(study.feedback)}><Icon size={17} /> {mode.title}</button>;
-        })}
-      </div>
-
-      {study.mode === "flashcard" && <>
-        <button className={`flashcard ${study.flipped ? "flipped" : ""}`} type="button" onClick={onFlip} aria-label={study.flipped ? "Mặt nghĩa của flashcard" : "Mặt từ của flashcard"}>
-          <div className="card-meta"><span className="pos-chip">{POS_LABELS[currentWord.partOfSpeech]}</span><span><MousePointerClick size={14} /> Chạm để lật</span></div>
-          <div className="card-content"><div className="card-side-label">{study.flipped ? "Nghĩa" : "Từ vựng"}</div><div className={study.flipped ? "card-meaning" : "card-word"}>{study.flipped ? currentWord.meaning : currentWord.term}</div></div>
-          <div className="tap-hint"><span>?</span>{study.flipped ? "Bạn đã nhớ đúng chưa?" : "Bạn nhớ nghĩa của từ này chứ?"}</div>
-        </button>
-        <div className="answer-row">
-          <button className="answer-button retry" type="button" onClick={() => onAnswer(false)} disabled={!study.flipped || Boolean(study.feedback)}>Chưa nhớ <kbd>1</kbd></button>
-          <button className="answer-button reveal" type="button" onClick={onFlip} disabled={Boolean(study.feedback)}>{study.flipped ? "Xem lại từ" : "Lật thẻ"} <kbd>Space</kbd></button>
-          <button className="answer-button know" type="button" onClick={() => onAnswer(true)} disabled={!study.flipped || Boolean(study.feedback)}>Đã nhớ <kbd>2</kbd></button>
-        </div>
-      </>}
+      <div className="assigned-study-mode"><AssignedIcon size={18} /><span>Giảng viên đã giao</span><strong>{assignedMode.title}</strong></div>
+      {!isFullscreen && <button className="fullscreen-required" type="button" onClick={onFullscreen}><Maximize2 size={19} /><span><b>Vào toàn màn hình để tiếp tục</b><small>Thoát toàn màn hình khi đang làm sẽ bị trừ 5 điểm.</small></span></button>}
 
       {study.mode === "typing" && <div className="exercise-card">
         <div className="card-meta"><span className="pos-chip">{POS_LABELS[currentWord.partOfSpeech]}</span><span>Gõ từ tiếng Anh</span></div>
