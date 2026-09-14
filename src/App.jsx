@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { DEMO_WORDS, POS_LABELS, makeQuizChoices, normalizeAnswer, shuffle } from "./lib/vocabulary";
 import {
-  createDeck, createStudentAccounts, deleteDeck, getCurrentAccount, isSupabaseConfigured,
+  createDeck, createStudentAccounts, deleteDeck, deleteRoster, deleteOrphanedRosters, getCurrentAccount, isSupabaseConfigured,
   loadLibrary, loadRosterWorkbook, loadRosters, loadStudentResults, loadStudents,
   resetStudentPasswords, saveStudySession, signIn, signOut,
   updateDeckPracticeMode, updateDeckClassAccess,
@@ -93,18 +93,12 @@ export function App() {
   const [leaveDialog, setLeaveDialog] = useState(false);
   const [deckToDelete, setDeckToDelete] = useState(null);
   const [isDeletingDeck, setIsDeletingDeck] = useState(false);
+  const [isDeletingRoster, setIsDeletingRoster] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(Boolean(document.fullscreenElement));
   const [toast, setToast] = useState("");
 
   const availableClasses = useMemo(() => {
     const set = new Set();
-    for (const roster of rosters) {
-      if (roster.className) {
-        roster.className.split(",").map((c) => c.trim()).forEach((c) => {
-          if (c) set.add(c);
-        });
-      }
-    }
     for (const student of students) {
       if (student.className) {
         const trimmed = student.className.trim();
@@ -112,7 +106,7 @@ export function App() {
       }
     }
     return Array.from(set).sort((a, b) => a.localeCompare(b, "vi", { sensitivity: "base" }));
-  }, [rosters, students]);
+  }, [students]);
 
   const selectedDeck = decks.find((deck) => deck.id === selectedDeckId) || decks[0];
   const currentWord = study?.items[study.index] || null;
@@ -215,8 +209,16 @@ export function App() {
       account.role === "instructor" ? loadStudents() : Promise.resolve([]),
       account.role === "instructor" ? loadStudentResults() : Promise.resolve([]),
       account.role === "instructor" ? loadRosters() : Promise.resolve([]),
-    ]).then(([library, studentList, resultList, rosterList]) => {
+    ]).then(async ([library, studentList, resultList, rosterList]) => {
       if (!active) return;
+      if (account.role === "instructor") {
+        const studentRosterIds = new Set(studentList.map((s) => s.rosterId).filter(Boolean));
+        const hasOrphaned = rosterList.some((r) => !studentRosterIds.has(r.id));
+        if (hasOrphaned) {
+          void deleteOrphanedRosters();
+          rosterList = rosterList.filter((r) => studentRosterIds.has(r.id));
+        }
+      }
       setDecks([DEMO_DECK, ...library.decks]);
       setSessions(library.sessions);
       setStudents(studentList);
@@ -726,6 +728,22 @@ export function App() {
     }
   }
 
+  async function handleDeleteRoster(rosterId) {
+    if (!window.confirm("Bạn có chắc chắn muốn xóa file danh sách này khỏi hệ thống?")) return;
+    setIsDeletingRoster(true);
+    try {
+      await deleteRoster(rosterId);
+      setRosters((current) => current.filter((r) => r.id !== rosterId));
+      setStudents((current) => current.filter((s) => s.rosterId !== rosterId));
+      showToast("Đã xóa file danh sách thành công.");
+    } catch (error) {
+      console.error("Không thể xóa file danh sách", error);
+      showToast(error.message || "Chưa xóa được file danh sách. Vui lòng thử lại.");
+    } finally {
+      setIsDeletingRoster(false);
+    }
+  }
+
   if (authStatus === "loading") return <LoadingScreen />;
   if (isSupabaseConfigured && !account) return <LoginView onLogin={handleLogin} />;
 
@@ -916,6 +934,8 @@ export function App() {
               onExportResults={handleExportRosterResults}
               onRefreshResults={handleRefreshStudentResults}
               onResetPasswords={handleResetPasswords}
+              isDeletingRoster={isDeletingRoster}
+              onDeleteRoster={handleDeleteRoster}
             />
           )}
           {view === "import" && importDraft && (
@@ -1053,7 +1073,7 @@ function LoginView({ onLogin }) {
   );
 }
 
-function InstructorView({ students, rosters, studentResults, generatedAccounts, isGenerating, isRefreshingResults, isExportingResults, isResettingPasswords, isDemo, onGenerate, onExport, onExportResults, onRefreshResults, onResetPasswords }) {
+function InstructorView({ students, rosters, studentResults, generatedAccounts, isGenerating, isRefreshingResults, isExportingResults, isResettingPasswords, isDeletingRoster, isDemo, onGenerate, onExport, onExportResults, onRefreshResults, onResetPasswords, onDeleteRoster }) {
   const rosterInputRef = useRef(null);
   const [rosterDraft, setRosterDraft] = useState(null);
   const [classNameInput, setClassNameInput] = useState("");
@@ -1082,13 +1102,6 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
 
   const classList = useMemo(() => {
     const set = new Set();
-    for (const r of rosters) {
-      if (r.className) {
-        r.className.split(",").map((c) => c.trim()).forEach((c) => {
-          if (c) set.add(c);
-        });
-      }
-    }
     for (const s of students) {
       if (s.className) {
         const trimmed = s.className.trim();
@@ -1096,7 +1109,7 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
       }
     }
     return Array.from(set).sort((a, b) => a.localeCompare(b, "vi", { sensitivity: "base" }));
-  }, [rosters, students]);
+  }, [students]);
 
   const studentCountByClass = useMemo(() => {
     const counts = new Map();
@@ -1326,13 +1339,31 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
               onChange={(event) => setSelectedRosterId(event.target.value)}
               disabled={!rosters.length}
             >
-              <option value="">Danh sách</option>
+              <option value="">{rosters.length ? "Danh sách" : "Chưa có file danh sách"}</option>
               {rosters.map((roster) => (
                 <option key={roster.id} value={roster.id}>
                   {roster.originalFileName} · {roster.studentCount} SV
                 </option>
               ))}
             </select>
+            {selectedRosterId && (
+              <button
+                className="secondary-button password-toggle delete-roster-btn"
+                type="button"
+                onClick={async () => {
+                  const target = rosters.find((r) => r.id === selectedRosterId);
+                  if (target) {
+                    await onDeleteRoster(target.id);
+                    setSelectedRosterId("");
+                  }
+                }}
+                disabled={isDeletingRoster}
+                title="Xóa file danh sách này khỏi hệ thống"
+              >
+                {isDeletingRoster ? <LoaderCircle className="spin" size={17} /> : <Trash2 size={17} />}
+                <span>Xóa file</span>
+              </button>
+            )}
             <button className="secondary-button password-toggle" type="button" onClick={() => setShowPasswords((shown) => !shown)}>
               {showPasswords ? <EyeOff size={17} /> : <Eye size={17} />}
               {showPasswords ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
@@ -1364,41 +1395,43 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
           </div>
         </div>
 
-        {/* Thanh danh sách các lớp */}
-        <div className="class-filter-bar">
-          <div className="class-filter-title">
-            <Users size={15} />
-            <span>Lớp:</span>
+        {/* Thanh danh sách các lớp - Chỉ hiện khi đã có lớp học/sinh viên */}
+        {classList.length > 0 && (
+          <div className="class-filter-bar">
+            <div className="class-filter-title">
+              <Users size={15} />
+              <span>Lớp:</span>
+            </div>
+            <div className="class-tabs-list" role="tablist" aria-label="Lọc theo lớp học">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={selectedClassTab === "all"}
+                className={`class-tab-btn ${selectedClassTab === "all" ? "active" : ""}`}
+                onClick={() => setSelectedClassTab("all")}
+              >
+                <span>Tất cả các lớp</span>
+                <span className="class-badge">{students.length}</span>
+              </button>
+              {classList.map((cls) => {
+                const count = studentCountByClass.get(cls) || 0;
+                return (
+                  <button
+                    key={cls}
+                    type="button"
+                    role="tab"
+                    aria-selected={selectedClassTab === cls}
+                    className={`class-tab-btn ${selectedClassTab === cls ? "active" : ""}`}
+                    onClick={() => setSelectedClassTab(cls)}
+                  >
+                    <span>Lớp {cls}</span>
+                    <span className="class-badge">{count}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          <div className="class-tabs-list" role="tablist" aria-label="Lọc theo lớp học">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={selectedClassTab === "all"}
-              className={`class-tab-btn ${selectedClassTab === "all" ? "active" : ""}`}
-              onClick={() => setSelectedClassTab("all")}
-            >
-              <span>Tất cả các lớp</span>
-              <span className="class-badge">{students.length}</span>
-            </button>
-            {classList.map((cls) => {
-              const count = studentCountByClass.get(cls) || 0;
-              return (
-                <button
-                  key={cls}
-                  type="button"
-                  role="tab"
-                  aria-selected={selectedClassTab === cls}
-                  className={`class-tab-btn ${selectedClassTab === cls ? "active" : ""}`}
-                  onClick={() => setSelectedClassTab(cls)}
-                >
-                  <span>Lớp {cls}</span>
-                  <span className="class-badge">{count}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        )}
 
         {filteredStudents.length ? (
           <div className="student-table-wrap">

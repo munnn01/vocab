@@ -154,6 +154,49 @@ export async function loadRosterWorkbook(rosterId) {
   };
 }
 
+export async function deleteRoster(rosterId) {
+  if (!supabase) return;
+  const user = await requireUser();
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData?.session?.access_token;
+
+  if (token) {
+    try {
+      const res = await fetch("/api/delete-roster", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ rosterId }),
+      });
+      if (res.ok) return;
+    } catch {
+      // Fallback nếu API không khả dụng
+    }
+  }
+
+  const { error } = await supabase
+    .from("student_rosters")
+    .delete()
+    .eq("id", rosterId)
+    .eq("instructor_id", user.id);
+  if (error) throw error;
+}
+
+export async function deleteOrphanedRosters() {
+  if (!supabase) return;
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData?.session?.access_token;
+  if (!token) return;
+  try {
+    await fetch("/api/delete-roster", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ deleteOrphaned: true }),
+    });
+  } catch (err) {
+    console.warn("deleteOrphanedRosters error", err);
+  }
+}
+
 export async function loadStudentResults() {
   const user = await requireUser();
   let { data, error } = await supabase
