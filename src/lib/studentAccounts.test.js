@@ -92,4 +92,19 @@ describe("student roster helpers", () => {
     expect(sheet).toContain("<v>87</v>");
     expect(sheet).toContain("Có – thoát toàn màn hình");
   });
+
+  it("handles Target before Id in rels and numeric XML entities in inlineStr (e.g. 12A2 format)", async () => {
+    const bytes = zipSync({
+      "xl/workbook.xml": strToU8('<workbook><sheets><sheet name="Danh s&#225;ch l&#7899;p 12A2" sheetId="1" r:id="rId1"/></sheets></workbook>'),
+      "xl/_rels/workbook.xml.rels": strToU8('<Relationships><Relationship Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="/xl/worksheets/sheet1.xml" Id="rId1"/></Relationships>'),
+      "xl/worksheets/sheet1.xml": strToU8('<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>STT</t></is></c><c r="B1" t="inlineStr"><is><t>H&#7885; v&#224; T&#234;n</t></is></c><c r="C1" t="inlineStr"><is><t>L&#7899;p</t></is></c></row><row r="2"><c r="A2" t="n"><v>1</v></c><c r="B2" t="inlineStr"><is><t>L&#253; H&#7843;i Trang</t></is></c><c r="C2" t="inlineStr"><is><t>12A2</t></is></c></row></sheetData></worksheet>'),
+    });
+    const file = new Blob([bytes]);
+    Object.defineProperty(file, "name", { value: "Danh_sach_lop_12A2.xlsx" });
+    const parsed = await parseStudentRosterXlsx(file);
+    expect(parsed.workbook.sheetName).toBe("Danh sách lớp 12A2");
+    expect(parsed.students).toEqual([
+      { displayName: "Lý Hải Trang", className: "12A2", rowNumber: 2 },
+    ]);
+  });
 });

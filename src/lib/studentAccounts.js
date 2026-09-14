@@ -71,6 +71,8 @@ export function createDemoStudentAccounts({ students }) {
 
 function decodeXml(value) {
   return String(value || "")
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(Number(dec)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
@@ -113,11 +115,11 @@ function columnLetters(number) {
 }
 
 function getAttribute(xml, name) {
-  return xml.match(new RegExp(`\\b${name}="([^"]*)"`))?.[1] || "";
+  return xml.match(new RegExp(`\\b${name}=["']([^"']*)["']`, "i"))?.[1] || "";
 }
 
 function parseSharedStrings(files) {
-  const bytes = files["xl/sharedStrings.xml"];
+  const bytes = files["xl/sharedStrings.xml"] || files["xl/sharedstrings.xml"];
   if (!bytes) return [];
   const xml = strFromU8(bytes);
   return [...xml.matchAll(/<si\b[^>]*>([\s\S]*?)<\/si>/g)].map((match) =>
@@ -128,7 +130,7 @@ function parseSharedStrings(files) {
 
 function readCellValue(cellXml, sharedStrings) {
   const type = getAttribute(cellXml, "t");
-  if (type === "inlineStr") {
+  if (type === "inlineStr" || cellXml.includes("<is>")) {
     return [...cellXml.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)]
       .map((text) => decodeXml(text[1]))
       .join("");
@@ -136,7 +138,13 @@ function readCellValue(cellXml, sharedStrings) {
   const raw = cellXml.match(/<v\b[^>]*>([\s\S]*?)<\/v>/)?.[1] ?? "";
   if (type === "s") return sharedStrings[Number(raw)] ?? "";
   if (type === "b") return raw === "1" ? "TRUE" : "FALSE";
-  return decodeXml(raw);
+  if (type === "str") return decodeXml(raw);
+  if (raw) return decodeXml(raw);
+  const tMatches = [...cellXml.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)];
+  if (tMatches.length) {
+    return tMatches.map((text) => decodeXml(text[1])).join("");
+  }
+  return "";
 }
 
 function readRows(sheetXml, sharedStrings) {
@@ -150,17 +158,63 @@ function readRows(sheetXml, sharedStrings) {
 }
 
 function findWorksheet(files) {
-  const workbookXml = strFromU8(files["xl/workbook.xml"] || new Uint8Array());
-  const firstSheet = workbookXml.match(/<sheet\b[^>]*\bname="([^"]+)"[^>]*\br:id="([^"]+)"[^>]*\/?\s*>/);
-  if (!firstSheet) throw new Error("Không đọc được trang tính đầu tiên trong file Excel.");
-  const relsXml = strFromU8(files["xl/_rels/workbook.xml.rels"] || new Uint8Array());
-  const relationships = [...relsXml.matchAll(/<Relationship\b[^>]*\bId="([^"]+)"[^>]*\bTarget="([^"]+)"[^>]*\/?\s*>/g)];
-  const target = relationships.find((relationship) => relationship[1] === firstSheet[2])?.[2];
+  const workbookXml = strFromU8(files["xl/workbook.xml"] || files["xl/Workbook.xml"] || new Uint8Array());
+  const sheetMatches = [...workbookXml.matchAll(/<sheet\b([^>]*)\/?>/gi)];
+  if (!sheetMatches.length) throw new Error("Không đọc được trang tính đầu tiên trong file Excel.");
+
+  const firstSheetAttrs = sheetMatches[0][1];
+  const sheetName = decodeXml(getAttribute(firstSheetAttrs, "name"));
+  const relId = getAttribute(firstSheetAttrs, "r:id") || getAttribute(firstSheetAttrs, "id");
+
+  const relsXml = strFromU8(files["xl/_rels/workbook.xml.rels"] || files["xl/_rels/Workbook.xml.rels"] || new Uint8Array());
+  const relMatches = [...relsXml.matchAll(/<Relationship\b([^>]*)\/?>/gi)];
+
+  let target = "";
+  if (relId) {
+    for (const rel of relMatches) {
+      const id = getAttribute(rel[1], "Id") || getAttribute(rel[1], "id");
+      if (id === relId) {
+        target = getAttribute(rel[1], "Target") || getAttribute(rel[1], "target");
+        break;
+      }
+    }
+  }
+
+  if (!target) {
+    for (const rel of relMatches) {
+      const type = getAttribute(rel[1], "Type") || getAttribute(rel[1], "type");
+      if (type.toLowerCase().includes("worksheet")) {
+        target = getAttribute(rel[1], "Target") || getAttribute(rel[1], "target");
+        break;
+      }
+    }
+  }
+
+  if (!target) {
+    const candidatePaths = ["xl/worksheets/sheet1.xml", "xl/worksheets/Sheet1.xml", "worksheets/sheet1.xml"];
+    for (const path of candidatePaths) {
+      if (files[path]) {
+        target = path;
+        break;
+      }
+    }
+  }
+
   if (!target) throw new Error("Không tìm thấy dữ liệu trang tính trong file Excel.");
-  const worksheetPath = target.startsWith("/")
-    ? target.slice(1)
-    : `xl/${target.replace(/^\.\//, "")}`.replace(/\\/g, "/");
-  return { sheetName: decodeXml(firstSheet[1]), worksheetPath };
+
+  let clean = String(target || "").replace(/\\/g, "/").replace(/^\.\//, "");
+  if (clean.startsWith("/")) clean = clean.slice(1);
+  let worksheetPath = clean.startsWith("xl/") ? clean : `xl/${clean}`;
+
+  if (!files[worksheetPath]) {
+    const matchedKey = Object.keys(files).find(
+      (key) => key.toLowerCase() === worksheetPath.toLowerCase() ||
+               key.toLowerCase().endsWith(clean.toLowerCase())
+    );
+    if (matchedKey) worksheetPath = matchedKey;
+  }
+
+  return { sheetName: sheetName || "Trang tính 1", worksheetPath };
 }
 
 function bytesToBase64(bytes) {
@@ -198,8 +252,12 @@ export async function parseStudentRosterXlsx(file) {
   if (!sheetBytes) throw new Error("Trang tính đầu tiên không có dữ liệu.");
   const sharedStrings = parseSharedStrings(files);
   const rows = readRows(strFromU8(sheetBytes), sharedStrings);
-  const nameHeaders = new Set(["ho va ten", "ho ten", "ten sinh vien", "sinh vien", "full name", "name"]);
-  const classHeaders = new Set(["lop", "ten lop", "ma lop", "class"]);
+  const nameHeaders = new Set([
+    "ho va ten", "ho ten", "ten sinh vien", "sinh vien",
+    "full name", "name", "ho ten hoc sinh", "ho va ten hoc sinh",
+    "ten hoc sinh", "hoc sinh",
+  ]);
+  const classHeaders = new Set(["lop", "ten lop", "ma lop", "class", "lop hoc"]);
   let headerRow;
   let nameColumn = 0;
   let classColumn = 0;
