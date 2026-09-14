@@ -156,17 +156,26 @@ export function App() {
       event.preventDefault();
       event.returnValue = "";
     };
-    const warnOnBack = () => {
-      setLeaveDialog(true);
-      window.history.pushState({ vocabStudyGuard: true }, "", window.location.href);
+    const handlePopState = () => {
+      if (account?.role === "student") {
+        if (suppressFullscreenPenaltyRef.current) return;
+        window.clearTimeout(answerTimerRef.current);
+        finishStudy({ ...study, score: study.score - 5 }, false, "left_early");
+        setLeaveDialog(false);
+        setView("home");
+        showToast("Phát hiện thao tác quay lại (Touchpad/Back): trừ 5 điểm và kết thúc bài.");
+      } else {
+        setLeaveDialog(true);
+        window.history.pushState({ vocabStudyGuard: true }, "", window.location.href);
+      }
     };
     window.addEventListener("beforeunload", warnBeforeUnload);
-    window.addEventListener("popstate", warnOnBack);
+    window.addEventListener("popstate", handlePopState);
     return () => {
       window.removeEventListener("beforeunload", warnBeforeUnload);
-      window.removeEventListener("popstate", warnOnBack);
+      window.removeEventListener("popstate", handlePopState);
     };
-  }, [view, Boolean(study)]);
+  }, [account?.role, finishStudy, showToast, study, view]);
 
   useEffect(() => {
     if (view === "study" && study?.mode === "typing" && !study.feedback) typingInputRef.current?.focus();
@@ -279,8 +288,11 @@ export function App() {
           created_at: new Date().toISOString(),
         }, ...current]);
       }
-    }).catch((error) => console.error("Không thể lưu phiên học", error));
-  }, []);
+    }).catch((error) => {
+      console.error("Không thể lưu phiên học", error);
+      showToast("Lỗi khi lưu kết quả lên máy chủ: " + (error.message || error));
+    });
+  }, [showToast]);
 
   useEffect(() => {
     if (view !== "study" || !study || account?.role !== "student") return undefined;
@@ -291,7 +303,7 @@ export function App() {
         fullscreenSeenRef.current = true;
         return;
       }
-      if (!fullscreenSeenRef.current || suppressFullscreenPenaltyRef.current) return;
+      if (suppressFullscreenPenaltyRef.current) return;
       fullscreenSeenRef.current = false;
       window.clearTimeout(answerTimerRef.current);
       finishStudy({ ...study, score: study.score - 5 }, false, "fullscreen_exit");
@@ -300,8 +312,23 @@ export function App() {
       showToast("Đã thoát toàn màn hình: trừ 5 điểm và kết thúc bài.");
     };
 
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        if (suppressFullscreenPenaltyRef.current) return;
+        window.clearTimeout(answerTimerRef.current);
+        finishStudy({ ...study, score: study.score - 5 }, false, "fullscreen_exit");
+        setLeaveDialog(false);
+        setView("home");
+        showToast("Phát hiện chuyển ứng dụng / chuyển màn hình: trừ 5 điểm và kết thúc bài.");
+      }
+    };
+
     document.addEventListener("fullscreenchange", penalizeFullscreenExit);
-    return () => document.removeEventListener("fullscreenchange", penalizeFullscreenExit);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", penalizeFullscreenExit);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [account?.role, finishStudy, showToast, study, view]);
 
   const answerCurrent = useCallback((isCorrect) => {

@@ -143,14 +143,25 @@ export async function loadRosterWorkbook(rosterId) {
 
 export async function loadStudentResults() {
   const user = await requireUser();
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from("study_sessions")
     .select("id,owner_id,deck_id,mode,score,correct_count,total_count,completed,violation_reason,created_at,decks(title)")
     .neq("owner_id", user.id)
     .order("created_at", { ascending: false })
     .limit(500);
 
-  if (error) throw error;
+  if (error && error.message?.includes("violation_reason")) {
+    const fallback = await supabase
+      .from("study_sessions")
+      .select("id,owner_id,deck_id,mode,score,correct_count,total_count,completed,created_at,decks(title)")
+      .neq("owner_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(500);
+    if (fallback.error) throw fallback.error;
+    data = fallback.data;
+  } else if (error) {
+    throw error;
+  }
 
   return (data || []).map((session) => ({
     id: session.id,
@@ -295,7 +306,7 @@ export async function deleteDeck(deckId) {
 export async function saveStudySession({ deckId, mode, score, correct, total, completed, violationReason = null }) {
   if (!supabase || deckId === "demo") return;
   const user = await requireUser();
-  const { error } = await supabase.from("study_sessions").insert({
+  const payload = {
     owner_id: user.id,
     deck_id: deckId,
     mode,
@@ -303,7 +314,16 @@ export async function saveStudySession({ deckId, mode, score, correct, total, co
     correct_count: correct,
     total_count: total,
     completed,
-    violation_reason: violationReason,
-  });
+  };
+  if (violationReason) {
+    payload.violation_reason = violationReason;
+  }
+  let { error } = await supabase.from("study_sessions").insert(payload);
+  if (error && error.message?.includes("violation_reason")) {
+    delete payload.violation_reason;
+    const retry = await supabase.from("study_sessions").insert(payload);
+    if (retry.error) throw retry.error;
+    return;
+  }
   if (error) throw error;
 }
