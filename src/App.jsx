@@ -2,15 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft, BookOpen, BrainCircuit, Check, ChevronRight, CircleAlert, FileText,
   Download, Eye, EyeOff, FileSpreadsheet, FileUp, Flame, GraduationCap, Keyboard, KeyRound, Layers3,
-  LoaderCircle, LogOut, Maximize2, Minimize2, Plus,
-  RotateCcw, ShieldCheck, Sparkles, Trash2, Trophy, UserPlus, Users, X,
+  LoaderCircle, Lock, LogOut, Maximize2, Minimize2, Plus,
+  RotateCcw, ShieldCheck, Sparkles, Trash2, Trophy, Unlock, UserPlus, Users, X,
 } from "lucide-react";
 import { DEMO_WORDS, POS_LABELS, makeQuizChoices, normalizeAnswer, shuffle } from "./lib/vocabulary";
 import {
   createDeck, createStudentAccounts, deleteDeck, getCurrentAccount, isSupabaseConfigured,
   loadLibrary, loadRosterWorkbook, loadRosters, loadStudentResults, loadStudents,
   resetStudentPasswords, saveStudySession, signIn, signOut,
-  updateDeckPracticeMode,
+  updateDeckPracticeMode, updateDeckClassAccess,
 } from "./lib/supabase";
 import {
   createDemoStudentAccounts, downloadRosterCredentialsXlsx, downloadRosterResultsXlsx,
@@ -24,6 +24,7 @@ const DEMO_DECK = {
   wordCount: DEMO_WORDS.length,
   words: DEMO_WORDS,
   practiceMode: "typing",
+  unlockedClasses: null,
   isDemo: true,
 };
 
@@ -39,6 +40,18 @@ function formatMode(mode) {
 
 function deckMeta(deck) {
   return `${deck.words.length} từ${deck.isDemo ? " · Học thử ngay" : " · Từ PDF"}`;
+}
+
+export function isDeckUnlockedForClass(deck, className) {
+  if (!deck || !deck.unlockedClasses) return true;
+  if (deck.unlockedClasses.includes("*")) return true;
+  if (!className) return true;
+  return deck.unlockedClasses.includes(className);
+}
+
+export function isDeckLockedForStudent(deck, account) {
+  if (!deck || account?.role !== "student") return false;
+  return !isDeckUnlockedForClass(deck, account.className);
 }
 
 export function App() {
@@ -68,6 +81,7 @@ export function App() {
   const [isExportingResults, setIsExportingResults] = useState(false);
   const [isResettingPasswords, setIsResettingPasswords] = useState(false);
   const [isUpdatingMode, setIsUpdatingMode] = useState(false);
+  const [isUpdatingAccess, setIsUpdatingAccess] = useState(false);
   const [selectedDeckId, setSelectedDeckId] = useState("demo");
   const [connection, setConnection] = useState(isSupabaseConfigured ? "connecting" : "demo");
   const [importProgress, setImportProgress] = useState(0);
@@ -81,6 +95,24 @@ export function App() {
   const [isDeletingDeck, setIsDeletingDeck] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(Boolean(document.fullscreenElement));
   const [toast, setToast] = useState("");
+
+  const availableClasses = useMemo(() => {
+    const set = new Set();
+    for (const roster of rosters) {
+      if (roster.className) {
+        roster.className.split(",").map((c) => c.trim()).forEach((c) => {
+          if (c) set.add(c);
+        });
+      }
+    }
+    for (const student of students) {
+      if (student.className) {
+        const trimmed = student.className.trim();
+        if (trimmed) set.add(trimmed);
+      }
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "vi", { sensitivity: "base" }));
+  }, [rosters, students]);
 
   const selectedDeck = decks.find((deck) => deck.id === selectedDeckId) || decks[0];
   const currentWord = study?.items[study.index] || null;
@@ -239,6 +271,10 @@ export function App() {
       showToast("Bộ từ này chưa có từ để học.");
       return;
     }
+    if (isDeckLockedForStudent(selectedDeck, account)) {
+      showToast(`Bộ từ này đang khóa đối với lớp ${account.className || "của bạn"}.`);
+      return;
+    }
     const mode = PRACTICE_MODES.some((item) => item.id === selectedDeck.practiceMode)
       ? selectedDeck.practiceMode
       : "typing";
@@ -385,6 +421,7 @@ export function App() {
         rejected: parsed.rejected,
         pageCount: parsed.pageCount,
         practiceMode: "typing",
+        unlockedClasses: null,
       });
       setView("import");
     } catch (error) {
@@ -401,7 +438,13 @@ export function App() {
     try {
       let savedDeck;
       if (isSupabaseConfigured && connection === "connected") {
-        savedDeck = await createDeck({ title: importDraft.title.trim(), sourceFileName: importDraft.fileName, practiceMode: importDraft.practiceMode, words: importDraft.words });
+        savedDeck = await createDeck({
+          title: importDraft.title.trim(),
+          sourceFileName: importDraft.fileName,
+          practiceMode: importDraft.practiceMode,
+          words: importDraft.words,
+          unlockedClasses: importDraft.unlockedClasses,
+        });
       } else {
         savedDeck = {
           id: `local-${crypto.randomUUID()}`,
@@ -410,6 +453,7 @@ export function App() {
           wordCount: importDraft.words.length,
           words: importDraft.words,
           practiceMode: importDraft.practiceMode,
+          unlockedClasses: importDraft.unlockedClasses,
           isTemporary: true,
         };
       }
@@ -475,6 +519,35 @@ export function App() {
       showToast("Chưa cập nhật được thể loại làm bài.");
     } finally {
       setIsUpdatingMode(false);
+    }
+  }
+
+  async function handleDeckClassAccess(unlockedClasses) {
+    if (!selectedDeck || selectedDeck.isDemo) return;
+    const previous = selectedDeck.unlockedClasses;
+    setDecks((current) =>
+      current.map((deck) =>
+        deck.id === selectedDeck.id ? { ...deck, unlockedClasses } : deck
+      )
+    );
+    if (selectedDeck.isTemporary) {
+      showToast("Đã cập nhật quyền truy cập lớp.");
+      return;
+    }
+    setIsUpdatingAccess(true);
+    try {
+      await updateDeckClassAccess(selectedDeck.id, unlockedClasses);
+      showToast("Đã lưu quyền truy cập lớp thành công.");
+    } catch (error) {
+      console.error("Không thể cập nhật quyền truy cập lớp", error);
+      setDecks((current) =>
+        current.map((deck) =>
+          deck.id === selectedDeck.id ? { ...deck, unlockedClasses: previous } : deck
+        )
+      );
+      showToast(error.message || "Chưa cập nhật được quyền truy cập lớp.");
+    } finally {
+      setIsUpdatingAccess(false);
     }
   }
 
@@ -712,8 +785,8 @@ export function App() {
                   if (view === "study") setLeaveDialog(true);
                   else { setSelectedDeckId(deck.id); setView("home"); }
                 }}>
-                  <span className={`deck-icon ${index % 2 ? "blue" : "coral"}`}>{deck.isDemo ? <Sparkles size={18} /> : <BookOpen size={18} />}</span>
-                  <span><b>{deck.title}</b><small>{deckMeta(deck)}</small></span>
+                  <span className={`deck-icon ${isDeckLockedForStudent(deck, account) ? "locked" : (index % 2 ? "blue" : "coral")}`}>{isDeckLockedForStudent(deck, account) ? <Lock size={16} /> : deck.isDemo ? <Sparkles size={18} /> : <BookOpen size={18} />}</span>
+                  <span><b>{deck.title}</b><small>{isDeckLockedForStudent(deck, account) ? "🔒 Đã khóa cho lớp bạn" : deckMeta(deck)}</small></span>
                 </button>
                 {canManage && !deck.isDemo && (
                   <button
@@ -737,9 +810,9 @@ export function App() {
         </aside>
 
         <section className="content-stage">
-          {view === "home" && <HomeView deck={selectedDeck} canManage={canManage} isImporting={isImporting} isUpdatingMode={isUpdatingMode} isDeletingDeck={isDeletingDeck} importProgress={importProgress} onPickPdf={() => fileInputRef.current?.click()} onStart={startStudy} onModeChange={handleDeckPracticeMode} onDeleteDeck={(deck) => setDeckToDelete(deck)} />}
+          {view === "home" && <HomeView deck={selectedDeck} account={account} canManage={canManage} availableClasses={availableClasses} isImporting={isImporting} isUpdatingMode={isUpdatingMode} isUpdatingAccess={isUpdatingAccess} isDeletingDeck={isDeletingDeck} importProgress={importProgress} onPickPdf={() => fileInputRef.current?.click()} onStart={startStudy} onModeChange={handleDeckPracticeMode} onClassAccessChange={handleDeckClassAccess} onDeleteDeck={(deck) => setDeckToDelete(deck)} />}
           {view === "students" && canManage && <InstructorView students={students} rosters={rosters} studentResults={studentResults} generatedAccounts={generatedAccounts} isGenerating={isGeneratingAccounts} isRefreshingResults={isRefreshingResults} isExportingResults={isExportingResults} isResettingPasswords={isResettingPasswords} isDemo={Boolean(account.demo)} onGenerate={handleGenerateStudents} onExport={handleExportStudents} onExportResults={handleExportRosterResults} onRefreshResults={handleRefreshStudentResults} onResetPasswords={handleResetPasswords} />}
-          {view === "import" && importDraft && <ImportView draft={importDraft} isSaving={isSaving} connection={connection} onBack={() => setView("home")} onChangeTitle={(title) => setImportDraft((draft) => ({ ...draft, title }))} onChangePracticeMode={(practiceMode) => setImportDraft((draft) => ({ ...draft, practiceMode }))} onRemoveWord={removeDraftWord} onSave={saveImport} />}
+          {view === "import" && importDraft && <ImportView draft={importDraft} availableClasses={availableClasses} isSaving={isSaving} connection={connection} onBack={() => setView("home")} onChangeTitle={(title) => setImportDraft((draft) => ({ ...draft, title }))} onChangePracticeMode={(practiceMode) => setImportDraft((draft) => ({ ...draft, practiceMode }))} onChangeUnlockedClasses={(unlockedClasses) => setImportDraft((draft) => ({ ...draft, unlockedClasses }))} onRemoveWord={removeDraftWord} onSave={saveImport} />}
           {view === "study" && study && currentWord && <StudyView study={study} currentWord={currentWord} quizChoices={quizChoices} typingInputRef={typingInputRef} isFullscreen={isFullscreen} onBack={() => setLeaveDialog(true)} onFullscreen={toggleFullscreen} onAnswer={answerCurrent} onInput={(input) => setStudy((current) => ({ ...current, input }))} onTypingSubmit={submitTyping} />}
           {view === "results" && lastResult && <ResultView result={lastResult} onAgain={startStudy} onHome={() => setView("home")} />}
         </section>
@@ -845,14 +918,17 @@ function LoginView({ onLogin }) {
 function InstructorView({ students, rosters, studentResults, generatedAccounts, isGenerating, isRefreshingResults, isExportingResults, isResettingPasswords, isDemo, onGenerate, onExport, onExportResults, onRefreshResults, onResetPasswords }) {
   const rosterInputRef = useRef(null);
   const [rosterDraft, setRosterDraft] = useState(null);
-  const [fallbackClass, setFallbackClass] = useState("");
+  const [classNameInput, setClassNameInput] = useState("");
   const [isReadingRoster, setIsReadingRoster] = useState(false);
   const [selectedRosterId, setSelectedRosterId] = useState(rosters[0]?.id || "");
+  const [selectedClassTab, setSelectedClassTab] = useState("all");
   const [showPasswords, setShowPasswords] = useState(false);
   const [error, setError] = useState("");
+
   useEffect(() => {
     if (rosters[0]?.id) setSelectedRosterId(rosters[0].id);
   }, [rosters[0]?.id]);
+
   const generatedAccountMap = useMemo(() => {
     const map = new Map();
     for (const acc of generatedAccounts) {
@@ -869,8 +945,46 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
     }
     return latest;
   }, [studentResults]);
-  const resultStudentCount = latestResultByStudent.size;
-  const missingClassCount = rosterDraft?.students.filter((student) => !student.className).length || 0;
+
+  const classList = useMemo(() => {
+    const set = new Set();
+    for (const r of rosters) {
+      if (r.className) {
+        r.className.split(",").map((c) => c.trim()).forEach((c) => {
+          if (c) set.add(c);
+        });
+      }
+    }
+    for (const s of students) {
+      if (s.className) {
+        const trimmed = s.className.trim();
+        if (trimmed) set.add(trimmed);
+      }
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "vi", { sensitivity: "base" }));
+  }, [rosters, students]);
+
+  const studentCountByClass = useMemo(() => {
+    const counts = new Map();
+    for (const student of students) {
+      const cls = student.className || "Chưa phân lớp";
+      counts.set(cls, (counts.get(cls) || 0) + 1);
+    }
+    return counts;
+  }, [students]);
+
+  const filteredStudents = useMemo(() => {
+    if (selectedClassTab === "all") return students;
+    return students.filter((student) => student.className === selectedClassTab);
+  }, [students, selectedClassTab]);
+
+  const filteredResultCount = useMemo(() => {
+    let count = 0;
+    for (const student of filteredStudents) {
+      if (latestResultByStudent.has(student.id)) count += 1;
+    }
+    return count;
+  }, [filteredStudents, latestResultByStudent]);
 
   async function readRoster(file) {
     if (!file) return;
@@ -879,7 +993,10 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
     try {
       const parsed = await parseStudentRosterXlsx(file);
       setRosterDraft(parsed);
-      setFallbackClass("");
+      const detected = parsed.students.find((s) => s.className)?.className
+        || parsed.workbook.sheetName
+        || "";
+      setClassNameInput(detected);
     } catch (readError) {
       setRosterDraft(null);
       setError(readError.message || "Không đọc được danh sách sinh viên.");
@@ -896,16 +1013,20 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
       setError("Hãy chọn file Excel danh sách sinh viên.");
       return;
     }
-    if (missingClassCount && !fallbackClass.trim()) {
-      setError("File chưa có cột Lớp. Hãy nhập tên lớp dùng chung.");
+    const chosenClass = classNameInput.trim();
+    if (!chosenClass) {
+      setError("Vui lòng nhập tên lớp cho danh sách sinh viên.");
       return;
     }
     try {
       const studentsWithClass = rosterDraft.students.map((student) => ({
         ...student,
-        className: student.className || fallbackClass.trim(),
+        className: chosenClass,
       }));
       await onGenerate({ students: studentsWithClass, workbook: rosterDraft.workbook });
+      setRosterDraft(null);
+      setClassNameInput("");
+      setSelectedClassTab(chosenClass);
     } catch (generationError) {
       setError(generationError.message || "Không thể tạo tài khoản.");
     }
@@ -914,27 +1035,97 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
   return (
     <div className="instructor-view">
       <div className="instructor-head">
-        <div><div className="eyebrow">Khu vực giảng viên</div><h1>Nhập danh sách lớp</h1><p>Tải Excel lên để tạo tài khoản, sau đó xuất điểm vào chính file đó.</p></div>
+        <div>
+          <div className="eyebrow">Khu vực giảng viên</div>
+          <h1>Nhập danh sách lớp</h1>
+          <p>Tải Excel lên để tạo tài khoản, đặt tên lớp và lọc điểm theo từng lớp.</p>
+        </div>
         <div className="instructor-summary">
-          <div className="student-count"><Users size={22} /><span><strong>{students.length}</strong> sinh viên đã tạo</span></div>
-          <div className="student-count score-count"><Trophy size={22} /><span><strong>{resultStudentCount}</strong> đã có kết quả</span></div>
+          <div className="student-count">
+            <Users size={22} />
+            <span>
+              <strong>{selectedClassTab === "all" ? students.length : filteredStudents.length}</strong> sinh viên {selectedClassTab !== "all" ? `lớp ${selectedClassTab}` : "đã tạo"}
+            </span>
+          </div>
+          <div className="student-count score-count">
+            <Trophy size={22} />
+            <span><strong>{filteredResultCount}</strong> đã có kết quả</span>
+          </div>
         </div>
       </div>
 
-      {isDemo && <div className="demo-banner"><CircleAlert size={18} /><span>Đây là bản xem thử. Tài khoản tạo ở đây chỉ để kiểm tra giao diện và file Excel.</span></div>}
+      {isDemo && (
+        <div className="demo-banner">
+          <CircleAlert size={18} />
+          <span>Đây là bản xem thử. Tài khoản tạo ở đây chỉ để kiểm tra giao diện và file Excel.</span>
+        </div>
+      )}
 
       <div className="teacher-grid">
         <form className="account-generator" onSubmit={submit}>
-          <div className="generator-title"><span><FileSpreadsheet size={20} /></span><div><h2>File danh sách sinh viên</h2><p>Cần cột “Họ và tên”; cột “Lớp” có thể dùng để tạo tiền tố tài khoản.</p></div></div>
-          <input ref={rosterInputRef} className="visually-hidden" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(event) => readRoster(event.target.files?.[0])} />
-          <button className={`roster-drop ${rosterDraft ? "ready" : ""}`} type="button" onClick={() => rosterInputRef.current?.click()} disabled={isReadingRoster || isGenerating}>
+          <div className="generator-title">
+            <span><FileSpreadsheet size={20} /></span>
+            <div>
+              <h2>File danh sách sinh viên</h2>
+              <p>Chọn file Excel (.xlsx). Bạn có thể đặt tên lớp cho danh sách này bên dưới.</p>
+            </div>
+          </div>
+          <input
+            ref={rosterInputRef}
+            className="visually-hidden"
+            type="file"
+            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            onChange={(event) => readRoster(event.target.files?.[0])}
+          />
+          <button
+            className={`roster-drop ${rosterDraft ? "ready" : ""}`}
+            type="button"
+            onClick={() => rosterInputRef.current?.click()}
+            disabled={isReadingRoster || isGenerating}
+          >
             {isReadingRoster ? <LoaderCircle className="spin" size={24} /> : rosterDraft ? <Check size={24} /> : <FileUp size={24} />}
-            <span><b>{isReadingRoster ? "Đang đọc file…" : rosterDraft ? rosterDraft.workbook.originalFileName : "Chọn file Excel (.xlsx)"}</b><small>{rosterDraft ? `${rosterDraft.students.length} sinh viên · Trang ${rosterDraft.workbook.sheetName}` : "Tối đa 100 sinh viên, dung lượng dưới 2,5 MB"}</small></span>
+            <span>
+              <b>{isReadingRoster ? "Đang đọc file…" : rosterDraft ? rosterDraft.workbook.originalFileName : "Chọn file Excel (.xlsx)"}</b>
+              <small>{rosterDraft ? `${rosterDraft.students.length} sinh viên · Trang ${rosterDraft.workbook.sheetName}` : "Tối đa 100 sinh viên, dung lượng dưới 2,5 MB"}</small>
+            </span>
           </button>
-          {missingClassCount > 0 && <label className="fallback-class"><span>File chưa có cột Lớp · nhập lớp dùng chung</span><input className="auth-input" value={fallbackClass} onChange={(event) => setFallbackClass(event.target.value)} maxLength={80} placeholder="Ví dụ: 12A1" required /></label>}
-          {rosterDraft && <div className="roster-preview"><span>Đã nhận diện</span><b>{rosterDraft.students.slice(0, 3).map((student) => student.displayName).join(", ")}{rosterDraft.students.length > 3 ? ` và ${rosterDraft.students.length - 3} sinh viên khác` : ""}</b></div>}
+
+          {rosterDraft && (
+            <div className="class-name-box">
+              <label className="field-label" htmlFor="roster-class-name">
+                <span>Đặt tên lớp cho danh sách này</span>
+                <small>Tên lớp dùng để quản lý điểm và mở/khóa bộ từ vựng (ví dụ: 12A1, 12A2, CNTT-K15...)</small>
+              </label>
+              <input
+                id="roster-class-name"
+                className="auth-input class-input"
+                value={classNameInput}
+                onChange={(event) => setClassNameInput(event.target.value)}
+                maxLength={80}
+                placeholder="Nhập tên lớp, ví dụ: 12A1"
+                required
+                autoFocus
+              />
+            </div>
+          )}
+
+          {rosterDraft && (
+            <div className="roster-preview">
+              <span>Đã nhận diện {rosterDraft.students.length} sinh viên</span>
+              <b>{rosterDraft.students.slice(0, 3).map((student) => student.displayName).join(", ")}{rosterDraft.students.length > 3 ? ` và ${rosterDraft.students.length - 3} sinh viên khác` : ""}</b>
+            </div>
+          )}
+
           {error && <div className="login-error" role="alert"><CircleAlert size={17} /> {error}</div>}
-          <button className="primary-button generator-submit" type="submit" disabled={isGenerating || isReadingRoster || !rosterDraft}>{isGenerating ? <LoaderCircle className="spin" size={18} /> : <UserPlus size={18} />}{isGenerating ? "Đang tạo tài khoản…" : `Tạo ${rosterDraft?.students.length || 0} tài khoản`}</button>
+
+          <button
+            className="primary-button generator-submit"
+            type="submit"
+            disabled={isGenerating || isReadingRoster || !rosterDraft || !classNameInput.trim()}
+          >
+            {isGenerating ? <LoaderCircle className="spin" size={18} /> : <UserPlus size={18} />}
+            {isGenerating ? "Đang tạo tài khoản…" : `Tạo ${rosterDraft?.students.length || 0} tài khoản`}
+          </button>
         </form>
 
         <section className="export-panel">
@@ -942,29 +1133,303 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
           <div className="eyebrow">File cấp cho sinh viên</div>
           <h2>{generatedAccounts.length ? `${generatedAccounts.length} tài khoản sẵn sàng` : "Chưa có đợt mới"}</h2>
           <p>File gốc được thêm cột Tên đăng nhập và Mật khẩu. Mật khẩu chỉ hiện ở lần tạo này.</p>
-          <button className="secondary-button" type="button" onClick={onExport} disabled={!generatedAccounts.length}><Download size={18} /> Tải file cấp tài khoản</button>
+          <button className="secondary-button" type="button" onClick={onExport} disabled={!generatedAccounts.length}>
+            <Download size={18} /> Tải file cấp tài khoản
+          </button>
         </section>
       </div>
 
-      {generatedAccounts.length > 0 && <section className="new-accounts">
-        <div className="table-title"><div><div className="eyebrow">Đợt vừa tạo</div><h2>Tài khoản và mật khẩu</h2></div><button className="secondary-button password-toggle" type="button" onClick={() => setShowPasswords((shown) => !shown)}>{showPasswords ? <EyeOff size={17} /> : <Eye size={17} />}{showPasswords ? "Ẩn mật khẩu" : "Hiện mật khẩu"}</button></div>
-        <div className="student-table-wrap"><table className="student-table"><thead><tr><th>STT</th><th>Tên hiển thị</th><th>Tên đăng nhập</th><th>Mật khẩu</th><th>Lớp</th></tr></thead><tbody>{generatedAccounts.map((student, index) => <tr key={student.id}><td>{index + 1}</td><td>{student.displayName}</td><td><code>{student.username}</code></td><td><code>{showPasswords ? student.password : "••••••••••"}</code></td><td>{student.className}</td></tr>)}</tbody></table></div>
-      </section>}
+      {generatedAccounts.length > 0 && (
+        <section className="new-accounts">
+          <div className="table-title">
+            <div>
+              <div className="eyebrow">Đợt vừa tạo</div>
+              <h2>Tài khoản và mật khẩu</h2>
+            </div>
+            <button className="secondary-button password-toggle" type="button" onClick={() => setShowPasswords((shown) => !shown)}>
+              {showPasswords ? <EyeOff size={17} /> : <Eye size={17} />}
+              {showPasswords ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+            </button>
+          </div>
+          <div className="student-table-wrap">
+            <table className="student-table">
+              <thead>
+                <tr>
+                  <th>STT</th>
+                  <th>Tên hiển thị</th>
+                  <th>Tên đăng nhập</th>
+                  <th>Mật khẩu</th>
+                  <th>Lớp</th>
+                </tr>
+              </thead>
+              <tbody>
+                {generatedAccounts.map((student, index) => (
+                  <tr key={student.id}>
+                    <td>{index + 1}</td>
+                    <td>{student.displayName}</td>
+                    <td><code>{student.username}</code></td>
+                    <td><code>{showPasswords ? student.password : "••••••••••"}</code></td>
+                    <td><span className="class-name-tag">{student.className}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       <section className="student-directory">
-        <div className="table-title"><div><div className="eyebrow">Điểm học tập</div><h2>Kết quả mới nhất của sinh viên</h2><p>Chọn danh sách để xuất chính file đã nhập, có thêm cột Điểm và Lỗi trong quá trình làm bài.</p></div><div className="result-tools"><select className="roster-select" value={selectedRosterId} onChange={(event) => setSelectedRosterId(event.target.value)} disabled={!rosters.length}>{rosters.length ? rosters.map((roster) => <option key={roster.id} value={roster.id}>{roster.originalFileName} · {roster.studentCount} SV</option>) : <option value="">Chưa có file</option>}</select><button className="secondary-button password-toggle" type="button" onClick={() => setShowPasswords((shown) => !shown)}>{showPasswords ? <EyeOff size={17} /> : <Eye size={17} />}{showPasswords ? "Ẩn mật khẩu" : "Hiện mật khẩu"}</button><button className="secondary-button password-toggle" type="button" onClick={() => onResetPasswords()} disabled={isResettingPasswords || !students.length} title="Đặt lại mật khẩu ngẫu nhiên cho tất cả sinh viên và lưu vào hệ thống">{isResettingPasswords ? <LoaderCircle className="spin" size={17} /> : <KeyRound size={17} />}{isResettingPasswords ? "Đang cấp lại…" : "Cấp lại MK"}</button><button className="secondary-button password-toggle" type="button" onClick={() => onExportResults(selectedRosterId)} disabled={!selectedRosterId || isExportingResults}>{isExportingResults ? <LoaderCircle className="spin" size={17} /> : <Download size={17} />}{isExportingResults ? "Đang xuất…" : "Xuất kết quả"}</button><button className="secondary-button password-toggle" type="button" onClick={onRefreshResults} disabled={isRefreshingResults}>{isRefreshingResults ? <LoaderCircle className="spin" size={17} /> : <RotateCcw size={17} />}{isRefreshingResults ? "Đang cập nhật…" : "Cập nhật điểm"}</button></div></div>
-        {students.length ? <div className="student-table-wrap"><table className="student-table result-table"><thead><tr><th>Sinh viên</th><th>Tên đăng nhập</th><th>Mật khẩu</th><th>Lớp</th><th>Điểm gần nhất</th><th>Kết quả</th><th>Lỗi/vi phạm</th><th>Hoàn thành</th></tr></thead><tbody>{students.map((student) => {
-          const result = latestResultByStudent.get(student.id);
-          const issue = !result ? "—" : result.completed ? "Không" : result.violationReason === "fullscreen_exit" ? "Thoát toàn màn hình" : "Rời bài sớm";
-          const rawPassword = student.initialPassword || generatedAccountMap.get(student.username) || generatedAccountMap.get(student.id);
-          return <tr key={student.id}><td>{student.displayName}</td><td><code>{student.username}</code></td><td>{showPasswords ? (rawPassword ? <code>{rawPassword}</code> : <span className="no-result" title="Mật khẩu tạo ở đợt trước khi có tính năng lưu. Bấm 'Cấp lại MK' ở trên để tạo mật khẩu mới.">Chưa lưu MK</span>) : <code>••••••••••</code>}</td><td>{student.className}</td><td>{result ? <span className={`score-badge ${result.completed ? "" : "left-early"}`}>{result.score} điểm</span> : <span className="no-result">Chưa làm</span>}</td><td>{result ? <><strong>{result.completed ? `${result.correct}/${result.total}` : "Chưa hoàn thành"}</strong><small>{result.completed ? `${result.deckTitle || "Bộ từ"} · ${formatMode(result.mode)}` : "Đã trừ 5 điểm"}</small></> : "—"}</td><td><span className={result && !result.completed ? "issue-badge" : ""}>{issue}</span></td><td>{result?.completedAt ? new Intl.DateTimeFormat("vi-VN", { dateStyle: "short", timeStyle: "short" }).format(new Date(result.completedAt)) : "—"}</td></tr>;
-        })}</tbody></table></div> : <div className="empty-students"><GraduationCap size={28} /><strong>Chưa có tài khoản sinh viên</strong><span>Tải file Excel danh sách ở trên để tạo đợt đầu tiên.</span></div>}
+        <div className="table-title">
+          <div>
+            <div className="eyebrow">Điểm học tập</div>
+            <h2>Kết quả mới nhất của sinh viên</h2>
+            <p>Chọn danh sách để xuất chính file đã nhập, có thêm cột Điểm và Lỗi trong quá trình làm bài.</p>
+          </div>
+          <div className="result-tools">
+            <select
+              className="roster-select"
+              value={selectedRosterId}
+              onChange={(event) => setSelectedRosterId(event.target.value)}
+              disabled={!rosters.length}
+            >
+              {rosters.length ? (
+                rosters.map((roster) => (
+                  <option key={roster.id} value={roster.id}>
+                    {roster.className ? `[${roster.className}] ` : ""}{roster.originalFileName} · {roster.studentCount} SV
+                  </option>
+                ))
+              ) : (
+                <option value="">Chưa có file</option>
+              )}
+            </select>
+            <button className="secondary-button password-toggle" type="button" onClick={() => setShowPasswords((shown) => !shown)}>
+              {showPasswords ? <EyeOff size={17} /> : <Eye size={17} />}
+              {showPasswords ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+            </button>
+            <button className="secondary-button password-toggle" type="button" onClick={() => onResetPasswords()} disabled={isResettingPasswords || !students.length} title="Đặt lại mật khẩu ngẫu nhiên cho tất cả sinh viên và lưu vào hệ thống">
+              {isResettingPasswords ? <LoaderCircle className="spin" size={17} /> : <KeyRound size={17} />}
+              {isResettingPasswords ? "Đang cấp lại…" : "Cấp lại MK"}
+            </button>
+            <button className="secondary-button password-toggle" type="button" onClick={() => onExportResults(selectedRosterId)} disabled={!selectedRosterId || isExportingResults}>
+              {isExportingResults ? <LoaderCircle className="spin" size={17} /> : <Download size={17} />}
+              {isExportingResults ? "Đang xuất…" : "Xuất kết quả"}
+            </button>
+            <button className="secondary-button password-toggle" type="button" onClick={onRefreshResults} disabled={isRefreshingResults}>
+              {isRefreshingResults ? <LoaderCircle className="spin" size={17} /> : <RotateCcw size={17} />}
+              {isRefreshingResults ? "Đang cập nhật…" : "Cập nhật điểm"}
+            </button>
+          </div>
+        </div>
+
+        {/* Thanh danh sách các lớp */}
+        <div className="class-filter-bar">
+          <div className="class-filter-title">
+            <Users size={15} />
+            <span>Lớp:</span>
+          </div>
+          <div className="class-tabs-list" role="tablist" aria-label="Lọc theo lớp học">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={selectedClassTab === "all"}
+              className={`class-tab-btn ${selectedClassTab === "all" ? "active" : ""}`}
+              onClick={() => setSelectedClassTab("all")}
+            >
+              <span>Tất cả các lớp</span>
+              <span className="class-badge">{students.length}</span>
+            </button>
+            {classList.map((cls) => {
+              const count = studentCountByClass.get(cls) || 0;
+              return (
+                <button
+                  key={cls}
+                  type="button"
+                  role="tab"
+                  aria-selected={selectedClassTab === cls}
+                  className={`class-tab-btn ${selectedClassTab === cls ? "active" : ""}`}
+                  onClick={() => {
+                    setSelectedClassTab(cls);
+                    const matchingRoster = rosters.find((r) => r.className === cls);
+                    if (matchingRoster) setSelectedRosterId(matchingRoster.id);
+                  }}
+                >
+                  <span>Lớp {cls}</span>
+                  <span className="class-badge">{count}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {filteredStudents.length ? (
+          <div className="student-table-wrap">
+            <table className="student-table result-table">
+              <thead>
+                <tr>
+                  <th>Sinh viên</th>
+                  <th>Tên đăng nhập</th>
+                  <th>Mật khẩu</th>
+                  <th>Lớp</th>
+                  <th>Điểm gần nhất</th>
+                  <th>Kết quả</th>
+                  <th>Lỗi/vi phạm</th>
+                  <th>Hoàn thành</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredStudents.map((student) => {
+                  const result = latestResultByStudent.get(student.id);
+                  const issue = !result
+                    ? "—"
+                    : result.completed
+                    ? "Không"
+                    : result.violationReason === "fullscreen_exit"
+                    ? "Thoát toàn màn hình"
+                    : "Rời bài sớm";
+                  const rawPassword = student.initialPassword || generatedAccountMap.get(student.username) || generatedAccountMap.get(student.id);
+                  return (
+                    <tr key={student.id}>
+                      <td>{student.displayName}</td>
+                      <td><code>{student.username}</code></td>
+                      <td>
+                        {showPasswords ? (
+                          rawPassword ? <code>{rawPassword}</code> : <span className="no-result" title="Mật khẩu tạo ở đợt trước khi có tính năng lưu. Bấm 'Cấp lại MK' ở trên để tạo mật khẩu mới.">Chưa lưu MK</span>
+                        ) : (
+                          <code>••••••••••</code>
+                        )}
+                      </td>
+                      <td><span className="class-name-tag">{student.className}</span></td>
+                      <td>
+                        {result ? (
+                          <span className={`score-badge ${result.completed ? "" : "left-early"}`}>
+                            {result.score} điểm
+                          </span>
+                        ) : (
+                          <span className="no-result">Chưa làm</span>
+                        )}
+                      </td>
+                      <td>
+                        {result ? (
+                          <>
+                            <strong>{result.completed ? `${result.correct}/${result.total}` : "Chưa hoàn thành"}</strong>
+                            <small>{result.completed ? `${result.deckTitle || "Bộ từ"} · ${formatMode(result.mode)}` : "Đã trừ 5 điểm"}</small>
+                          </>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td><span className={result && !result.completed ? "issue-badge" : ""}>{issue}</span></td>
+                      <td>
+                        {result?.completedAt
+                          ? new Intl.DateTimeFormat("vi-VN", { dateStyle: "short", timeStyle: "short" }).format(new Date(result.completedAt))
+                          : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="empty-students">
+            <GraduationCap size={28} />
+            <strong>{students.length ? `Chưa có sinh viên nào trong lớp "${selectedClassTab}"` : "Chưa có tài khoản sinh viên"}</strong>
+            <span>{students.length ? "Chọn tab khác hoặc tải thêm file danh sách cho lớp này." : "Tải file Excel danh sách ở trên để tạo đợt đầu tiên."}</span>
+          </div>
+        )}
       </section>
     </div>
   );
 }
 
-function HomeView({ deck, canManage, isImporting, isUpdatingMode, isDeletingDeck, importProgress, onPickPdf, onStart, onModeChange, onDeleteDeck }) {
+function ClassAccessControl({ availableClasses = [], unlockedClasses = null, onChange, disabled }) {
+  const isAllUnlocked = unlockedClasses === null;
+  const isAllLocked = Array.isArray(unlockedClasses) && unlockedClasses.length === 0;
+
+  function toggleClass(className) {
+    if (disabled) return;
+    if (unlockedClasses === null) {
+      const next = availableClasses.filter((c) => c !== className);
+      onChange(next);
+    } else {
+      const set = new Set(unlockedClasses);
+      if (set.has(className)) {
+        set.delete(className);
+        onChange(Array.from(set));
+      } else {
+        set.add(className);
+        if (availableClasses.length > 0 && availableClasses.every((c) => set.has(c))) {
+          onChange(null);
+        } else {
+          onChange(Array.from(set));
+        }
+      }
+    }
+  }
+
+  return (
+    <div className="class-access-control">
+      <div className="class-access-header">
+        <div>
+          <span className="field-label">Mở / Khóa bài tập theo từng lớp</span>
+          <p>Chọn mở hoặc khóa cho từng lớp học. Sinh viên lớp bị khóa sẽ không thể vào làm bài.</p>
+        </div>
+        {availableClasses.length > 0 && (
+          <div className="class-access-quick-actions">
+            <button
+              type="button"
+              className={`quick-action-btn ${isAllUnlocked ? "active" : ""}`}
+              onClick={() => onChange(null)}
+              disabled={disabled}
+            >
+              Mở tất cả
+            </button>
+            <button
+              type="button"
+              className={`quick-action-btn ${isAllLocked ? "active" : ""}`}
+              onClick={() => onChange([])}
+              disabled={disabled}
+            >
+              Khóa tất cả
+            </button>
+          </div>
+        )}
+      </div>
+
+      {availableClasses.length === 0 ? (
+        <div className="class-access-empty">
+          <span>Chưa có lớp nào trong danh sách. Bộ từ này mặc định sẽ mở cho tất cả các lớp khi bạn tạo sinh viên.</span>
+        </div>
+      ) : (
+        <div className="class-access-list">
+          {availableClasses.map((cls) => {
+            const unlocked = unlockedClasses === null || unlockedClasses.includes(cls);
+            return (
+              <button
+                key={cls}
+                type="button"
+                className={`class-access-card ${unlocked ? "unlocked" : "locked"}`}
+                onClick={() => toggleClass(cls)}
+                disabled={disabled}
+                title={unlocked ? `Lớp ${cls} đang mở - bấm để khóa` : `Lớp ${cls} đang khóa - bấm để mở`}
+              >
+                <div className="class-access-info">
+                  <span className="class-name-text">Lớp {cls}</span>
+                </div>
+                <span className={`class-lock-badge ${unlocked ? "badge-open" : "badge-locked"}`}>
+                  {unlocked ? <Unlock size={13} /> : <Lock size={13} />}
+                  <span>{unlocked ? "Mở" : "Khóa"}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HomeView({ deck, account, canManage, availableClasses = [], isImporting, isUpdatingMode, isUpdatingAccess, isDeletingDeck, importProgress, onPickPdf, onStart, onModeChange, onClassAccessChange, onDeleteDeck }) {
   const posCounts = useMemo(() => {
     const counts = {};
     for (const word of deck.words) counts[word.partOfSpeech] = (counts[word.partOfSpeech] || 0) + 1;
@@ -972,6 +1437,7 @@ function HomeView({ deck, canManage, isImporting, isUpdatingMode, isDeletingDeck
   }, [deck]);
   const assignedMode = PRACTICE_MODES.find((mode) => mode.id === deck.practiceMode) || PRACTICE_MODES[0];
   const AssignedIcon = assignedMode.icon;
+  const isLockedForMe = isDeckLockedForStudent(deck, account);
 
   return (
     <div className="home-view">
@@ -1011,10 +1477,35 @@ function HomeView({ deck, canManage, isImporting, isUpdatingMode, isDeletingDeck
             })}
           </div>
         </section>
+
+        {!deck.isDemo && (
+          <section className="assignment-panel">
+            <div className="section-title-row">
+              <div><span className="eyebrow">Quyền học theo lớp</span><h2>Mở / Khóa bài tập cho từng lớp</h2></div>
+              {isUpdatingAccess && <span className="points-rule"><LoaderCircle className="spin" size={15} /> Đang lưu…</span>}
+            </div>
+            <ClassAccessControl
+              availableClasses={availableClasses}
+              unlockedClasses={deck.unlockedClasses ?? null}
+              onChange={onClassAccessChange}
+              disabled={isUpdatingAccess}
+            />
+          </section>
+        )}
+
         <button className="drop-zone" type="button" onClick={onPickPdf}>
           <span><FileText size={21} /></span><span><b>Tạo bộ từ mới từ PDF</b><small>Định dạng mỗi dòng: new(adj): mới</small></span><span className="drop-action">Chọn file PDF</span>
         </button>
-      </> : <>
+      </> : isLockedForMe ? (
+        <div className="deck-locked-container">
+          <div className="deck-locked-badge"><Lock size={28} /></div>
+          <div className="deck-locked-content">
+            <div className="eyebrow">Bộ từ đang tạm khóa</div>
+            <h2>Bài tập chưa mở cho lớp {account?.className || "của bạn"}</h2>
+            <p>Giảng viên đang khóa bộ từ này đối với lớp của bạn. Hãy liên hệ với giảng viên để được mở quyền vào làm bài.</p>
+          </div>
+        </div>
+      ) : <>
         <div className="section-title-row">
           <div><span className="eyebrow">Thể loại được giao</span><h2>{assignedMode.title}</h2></div>
           <span className="points-rule">Đúng +10 · Sai −3 · Thoát −5</span>
@@ -1028,7 +1519,7 @@ function HomeView({ deck, canManage, isImporting, isUpdatingMode, isDeletingDeck
   );
 }
 
-function ImportView({ draft, isSaving, connection, onBack, onChangeTitle, onChangePracticeMode, onRemoveWord, onSave }) {
+function ImportView({ draft, availableClasses = [], isSaving, connection, onBack, onChangeTitle, onChangePracticeMode, onChangeUnlockedClasses, onRemoveWord, onSave }) {
   return (
     <div className="import-view">
       <button className="back-link" type="button" onClick={onBack}><ArrowLeft size={18} /> Quay lại</button>
@@ -1040,7 +1531,7 @@ function ImportView({ draft, isSaving, connection, onBack, onChangeTitle, onChan
       <input id="deck-title" className="title-input" value={draft.title} maxLength={120} onChange={(event) => onChangeTitle(event.target.value)} />
 
       <div className="import-mode-section">
-        <div><span className="field-label">Thể loại giao cho sinh viên</span><p>Sinh viên sẽ chỉ làm được thể loại giảng viên chọn.</p></div>
+        <div><span className="field-label">Thể loại giao cho sinh viên</span><p>Sinh viên sẽ làm bài theo thể loại giảng viên chọn (vẫn chọn 2 chế độ như thường).</p></div>
         <div className="mode-selector compact" role="group" aria-label="Thể loại giao cho sinh viên">
           {PRACTICE_MODES.map((mode) => {
             const Icon = mode.icon;
@@ -1049,6 +1540,13 @@ function ImportView({ draft, isSaving, connection, onBack, onChangeTitle, onChan
           })}
         </div>
       </div>
+
+      <ClassAccessControl
+        availableClasses={availableClasses}
+        unlockedClasses={draft.unlockedClasses ?? null}
+        onChange={onChangeUnlockedClasses}
+        disabled={isSaving}
+      />
 
       <div className="word-table-head"><span>Từ</span><span>Loại từ</span><span>Nghĩa</span><span /></div>
       <div className="word-table">

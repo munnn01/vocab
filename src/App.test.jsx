@@ -17,9 +17,46 @@ globalThis.document = {
   removeEventListener() {},
 };
 
-import { App } from "./App";
+import { App, isDeckUnlockedForClass, isDeckLockedForStudent } from "./App";
 
 test("App renders without crashing", () => {
   const html = renderToString(<App />);
   expect(html).toBeTruthy();
 });
+
+test("isDeckUnlockedForClass works correctly", () => {
+  // Deck with null unlockedClasses is unlocked for all
+  expect(isDeckUnlockedForClass({ unlockedClasses: null }, "12A1")).toBe(true);
+  expect(isDeckUnlockedForClass({}, "12A1")).toBe(true);
+  expect(isDeckUnlockedForClass(null, "12A1")).toBe(true);
+
+  // Deck with * is unlocked for all
+  expect(isDeckUnlockedForClass({ unlockedClasses: ["*"] }, "12A1")).toBe(true);
+
+  // Specific classes
+  const deck = { unlockedClasses: ["12A1", "12A2"] };
+  expect(isDeckUnlockedForClass(deck, "12A1")).toBe(true);
+  expect(isDeckUnlockedForClass(deck, "12A2")).toBe(true);
+  expect(isDeckUnlockedForClass(deck, "12A3")).toBe(false);
+  expect(isDeckUnlockedForClass(deck, "")).toBe(true);
+});
+
+test("isDeckLockedForStudent correctly detects locked decks", () => {
+  const openDeck = { title: "Open Deck", unlockedClasses: null };
+  const restrictedDeck = { title: "Restricted Deck", unlockedClasses: ["12A1"] };
+
+  const student1 = { role: "student", className: "12A1" };
+  const student2 = { role: "student", className: "12A2" };
+  const instructor = { role: "instructor" };
+
+  // Open deck is not locked for anyone
+  expect(isDeckLockedForStudent(openDeck, student1)).toBe(false);
+  expect(isDeckLockedForStudent(openDeck, student2)).toBe(false);
+  expect(isDeckLockedForStudent(openDeck, instructor)).toBe(false);
+
+  // Restricted deck
+  expect(isDeckLockedForStudent(restrictedDeck, student1)).toBe(false); // 12A1 unlocked
+  expect(isDeckLockedForStudent(restrictedDeck, student2)).toBe(true);  // 12A2 locked
+  expect(isDeckLockedForStudent(restrictedDeck, instructor)).toBe(false); // instructor never locked
+});
+

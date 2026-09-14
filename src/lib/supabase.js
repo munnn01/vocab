@@ -218,54 +218,75 @@ function toClientWord(word) {
 
 export async function loadLibrary() {
   const user = await requireUser();
-  const [{ data: decks, error: deckError }, { data: sessions, error: sessionError }] =
-    await Promise.all([
-      supabase
-        .from("decks")
-        .select("id,title,source_file_name,word_count,practice_mode,created_at,words(id,term,part_of_speech,meaning,position)")
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("study_sessions")
-        .select("id,deck_id,score,correct_count,total_count,completed,created_at")
-        .eq("owner_id", user.id)
-        .order("created_at", { ascending: false })
-        .limit(30),
-    ]);
+  let deckRes = await supabase
+    .from("decks")
+    .select("id,title,source_file_name,word_count,practice_mode,unlocked_classes,created_at,words(id,term,part_of_speech,meaning,position)")
+    .order("created_at", { ascending: false });
 
-  if (deckError) throw deckError;
-  if (sessionError) throw sessionError;
+  if (deckRes.error && deckRes.error.message?.includes("unlocked_classes")) {
+    deckRes = await supabase
+      .from("decks")
+      .select("id,title,source_file_name,word_count,practice_mode,created_at,words(id,term,part_of_speech,meaning,position)")
+      .order("created_at", { ascending: false });
+  }
+
+  const sessionRes = await supabase
+    .from("study_sessions")
+    .select("id,deck_id,score,correct_count,total_count,completed,created_at")
+    .eq("owner_id", user.id)
+    .order("created_at", { ascending: false })
+    .limit(30);
+
+  if (deckRes.error) throw deckRes.error;
+  if (sessionRes.error) throw sessionRes.error;
 
   return {
-    decks: (decks || []).map((deck) => ({
+    decks: (deckRes.data || []).map((deck) => ({
       id: deck.id,
       title: deck.title,
       sourceFileName: deck.source_file_name,
       wordCount: deck.word_count,
       practiceMode: deck.practice_mode || "typing",
+      unlockedClasses: Array.isArray(deck.unlocked_classes) ? deck.unlocked_classes : null,
       createdAt: deck.created_at,
       words: [...(deck.words || [])]
         .sort((a, b) => a.position - b.position)
         .map(toClientWord),
     })),
-    sessions: sessions || [],
+    sessions: sessionRes.data || [],
   };
 }
 
-export async function createDeck({ title, sourceFileName, practiceMode, words }) {
+export async function createDeck({ title, sourceFileName, practiceMode, words, unlockedClasses = null }) {
   const user = await requireUser();
-  const { data: deck, error: deckError } = await supabase
+  const payload = {
+    owner_id: user.id,
+    title,
+    source_file_name: sourceFileName,
+    word_count: words.length,
+    practice_mode: practiceMode,
+  };
+  if (Array.isArray(unlockedClasses)) {
+    payload.unlocked_classes = unlockedClasses;
+  }
+
+  let deckRes = await supabase
     .from("decks")
-    .insert({
-      owner_id: user.id,
-      title,
-      source_file_name: sourceFileName,
-      word_count: words.length,
-      practice_mode: practiceMode,
-    })
-    .select("id,title,source_file_name,word_count,practice_mode,created_at")
+    .insert(payload)
+    .select("id,title,source_file_name,word_count,practice_mode,unlocked_classes,created_at")
     .single();
 
-  if (deckError) throw deckError;
+  if (deckRes.error && deckRes.error.message?.includes("unlocked_classes")) {
+    delete payload.unlocked_classes;
+    deckRes = await supabase
+      .from("decks")
+      .insert(payload)
+      .select("id,title,source_file_name,word_count,practice_mode,created_at")
+      .single();
+  }
+
+  if (deckRes.error) throw deckRes.error;
+  const deck = deckRes.data;
 
   const rows = words.map((word, position) => ({
     deck_id: deck.id,
@@ -292,6 +313,7 @@ export async function createDeck({ title, sourceFileName, practiceMode, words })
     sourceFileName: deck.source_file_name,
     wordCount: deck.word_count,
     practiceMode: deck.practice_mode,
+    unlockedClasses: Array.isArray(deck.unlocked_classes) ? deck.unlocked_classes : (Array.isArray(unlockedClasses) ? unlockedClasses : null),
     createdAt: deck.created_at,
     words: [...savedWords].sort((a, b) => a.position - b.position).map(toClientWord),
   };
@@ -305,6 +327,21 @@ export async function updateDeckPracticeMode(deckId, practiceMode) {
     .update({ practice_mode: practiceMode })
     .eq("id", deckId);
   if (error) throw error;
+}
+
+export async function updateDeckClassAccess(deckId, unlockedClasses) {
+  await requireUser();
+  const value = Array.isArray(unlockedClasses) ? unlockedClasses : null;
+  const { error } = await supabase
+    .from("decks")
+    .update({ unlocked_classes: value })
+    .eq("id", deckId);
+  if (error) {
+    if (error.message?.includes("unlocked_classes")) {
+      throw new Error("Cơ sở dữ liệu Supabase chưa có cột unlocked_classes. Vui lòng chạy file migration trong SQL Editor.");
+    }
+    throw error;
+  }
 }
 
 export async function deleteDeck(deckId) {
