@@ -767,7 +767,6 @@ export function App() {
           <span>Từ Vựng <b>Mỗi Ngày</b></span>
         </button>
         <div className="topbar-actions">
-          <span className={`sync-pill ${connection}`}><span /> {connectionLabel}</span>
           <span className="account-pill">
             <span className="account-avatar-circle">{account.displayName ? account.displayName.trim().charAt(0).toUpperCase() : (canManage ? "G" : "S")}</span>
             <span className="account-pill-text">
