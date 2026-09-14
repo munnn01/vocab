@@ -24,6 +24,7 @@ import {
   getDeckLockAtForStudent,
   formatViolationText,
   getViolationBadgeClass,
+  getRosterDisplayLabel,
 } from "./App";
 
 test("App renders without crashing", () => {
@@ -156,6 +157,31 @@ test("formatViolationText and getViolationBadgeClass format violation details cl
   const vioCancelled = "Bị hủy bài thi (0 điểm): Vi phạm quy chế quá 2 lần (Thoát toàn màn hình)";
   expect(formatViolationText({ completed: false, violationReason: vioCancelled })).toBe(vioCancelled);
   expect(getViolationBadgeClass({ completed: false, violationReason: vioCancelled })).toBe("badge-violation-severe");
+});
+
+test("getRosterDisplayLabel formats roster filename with class name", () => {
+  // 1. Direct className on roster
+  const r1 = { id: "r1", originalFileName: "Danh_sach_lop_12A2.xlsx", className: "12A2" };
+  expect(getRosterDisplayLabel(r1, [])).toBe("Danh_sach_lop_12A2.xlsx - 12A2");
+
+  // 2. Class name found from students list
+  const r2 = { id: "r2", originalFileName: "Danh_sach_50_sinh_vien.xlsx", className: null };
+  const students = [
+    { rosterId: "r2", className: "12A1" },
+    { rosterId: "r2", className: "12A1" },
+  ];
+  expect(getRosterDisplayLabel(r2, students)).toBe("Danh_sach_50_sinh_vien.xlsx - 12A1");
+
+  // 3. Extracted from sheetName or filename fallback
+  const r3 = { id: "r3", originalFileName: "danh_sach.xlsx", sheetName: "Danh sách lớp 12A3", className: null };
+  expect(getRosterDisplayLabel(r3, [])).toBe("danh_sach.xlsx - 12A3");
+
+  const r4 = { id: "r4", originalFileName: "danh_sach_lop_10B1.xlsx", sheetName: null, className: null };
+  expect(getRosterDisplayLabel(r4, [])).toBe("danh_sach_lop_10B1.xlsx - 10B1");
+
+  // 4. No class name
+  const r5 = { id: "r5", originalFileName: "sinh_vien.xlsx", sheetName: "Sheet1", className: null };
+  expect(getRosterDisplayLabel(r5, [])).toBe("sinh_vien.xlsx");
 });
 
 

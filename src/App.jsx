@@ -124,6 +124,32 @@ export function getViolationBadgeClass(result) {
   return "badge-clean";
 }
 
+export function getRosterDisplayLabel(roster, students = []) {
+  if (!roster) return "";
+  let classLabel = "";
+  if (roster.className && roster.className.trim()) {
+    classLabel = roster.className.trim();
+  } else {
+    const fromStudents = students
+      .filter((s) => s.rosterId === roster.id && s.className)
+      .map((s) => s.className.trim());
+    if (fromStudents.length) {
+      classLabel = [...new Set(fromStudents)].join(", ");
+    } else if (roster.sheetName) {
+      const m = roster.sheetName.match(/1[0-2][A-Z]\d*/i) || roster.sheetName.match(/l[oớ]p\s*([^\s]+)/i);
+      if (m) classLabel = (m[1] || m[0]).trim();
+    } else if (roster.originalFileName) {
+      const m = roster.originalFileName.match(/1[0-2][A-Z]\d*/i) || roster.originalFileName.match(/l[oớ]p[_-]?([^\._-]+)/i);
+      if (m) classLabel = (m[1] || m[0]).trim();
+    }
+  }
+
+  if (classLabel) {
+    return `${roster.originalFileName} - ${classLabel}`;
+  }
+  return roster.originalFileName;
+}
+
 export function App() {
   const fileInputRef = useRef(null);
   const typingInputRef = useRef(null);
@@ -1722,7 +1748,7 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
               <option value="">{rosters.length ? "Danh sách" : "Chưa có file danh sách"}</option>
               {rosters.map((roster) => (
                 <option key={roster.id} value={roster.id}>
-                  {roster.originalFileName} · {roster.studentCount} SV
+                  {getRosterDisplayLabel(roster, students)}
                 </option>
               ))}
             </select>
@@ -1791,7 +1817,7 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
                 onClick={() => setSelectedClassTab("all")}
               >
                 <span>Tất cả các lớp</span>
-                <span className="class-badge">{students.length}</span>
+                <span className="class-badge">{classList.length}</span>
               </button>
               {classList.map((cls) => {
                 const count = studentCountByClass.get(cls) || 0;
