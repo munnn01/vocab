@@ -340,3 +340,19 @@ export async function saveStudySession({ deckId, mode, score, correct, total, co
   }
   if (error) throw error;
 }
+
+export async function resetStudentPasswords(studentIds = null) {
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError || !sessionData?.session) throw new Error("Phiên đăng nhập đã hết hạn.");
+  const response = await fetch("/api/reset-passwords", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${sessionData.session.access_token}`,
+    },
+    body: JSON.stringify({ studentIds }),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.error || "Không thể đặt lại mật khẩu.");
+  return result;
+}

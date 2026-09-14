@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft, BookOpen, BrainCircuit, Check, ChevronRight, CircleAlert, FileText,
-  Download, Eye, EyeOff, FileSpreadsheet, FileUp, Flame, GraduationCap, Keyboard, Layers3,
+  Download, Eye, EyeOff, FileSpreadsheet, FileUp, Flame, GraduationCap, Keyboard, KeyRound, Layers3,
   LoaderCircle, LogOut, Maximize2, Minimize2, Plus,
   RotateCcw, ShieldCheck, Sparkles, Trash2, Trophy, UserPlus, Users, X,
 } from "lucide-react";
@@ -9,7 +9,7 @@ import { DEMO_WORDS, POS_LABELS, makeQuizChoices, normalizeAnswer, shuffle } fro
 import {
   createDeck, createStudentAccounts, deleteDeck, getCurrentAccount, isSupabaseConfigured,
   loadLibrary, loadRosterWorkbook, loadRosters, loadStudentResults, loadStudents,
-  saveStudySession, signIn, signOut,
+  resetStudentPasswords, saveStudySession, signIn, signOut,
   updateDeckPracticeMode,
 } from "./lib/supabase";
 import {
@@ -66,6 +66,7 @@ export function App() {
   const [isGeneratingAccounts, setIsGeneratingAccounts] = useState(false);
   const [isRefreshingResults, setIsRefreshingResults] = useState(false);
   const [isExportingResults, setIsExportingResults] = useState(false);
+  const [isResettingPasswords, setIsResettingPasswords] = useState(false);
   const [isUpdatingMode, setIsUpdatingMode] = useState(false);
   const [selectedDeckId, setSelectedDeckId] = useState("demo");
   const [connection, setConnection] = useState(isSupabaseConfigured ? "connecting" : "demo");
@@ -550,14 +551,34 @@ export function App() {
       setGeneratedRoster({ ...values.workbook, id: roster.id });
       setRosters((current) => [roster, ...current.filter((item) => item.id !== roster.id)]);
       setStudents((current) => {
-        const next = accounts.map(({ password: _password, ...student }) => student);
+        const next = accounts.map((student) => ({
+          ...student,
+          initialPassword: student.password,
+        }));
         const ids = new Set(next.map((student) => student.id));
         return [...next, ...current.filter((student) => !ids.has(student.id))];
       });
-      showToast(`Đã tạo ${accounts.length} tài khoản. Hãy xuất Excel ngay để lưu mật khẩu.`);
+      showToast(`Đã tạo ${accounts.length} tài khoản. Mật khẩu đã được lưu vào hệ thống.`);
       return accounts;
     } finally {
       setIsGeneratingAccounts(false);
+    }
+  }
+
+  async function handleResetPasswords(studentIds = null) {
+    setIsResettingPasswords(true);
+    try {
+      const res = await resetStudentPasswords(studentIds);
+      const updatedMap = new Map((res.updated || []).map((u) => [u.studentId, u.password]));
+      setStudents((current) =>
+        current.map((s) => (updatedMap.has(s.id) ? { ...s, initialPassword: updatedMap.get(s.id) } : s))
+      );
+      showToast(res.message || "Đã đặt lại mật khẩu thành công.");
+    } catch (err) {
+      console.error("Không thể đặt lại mật khẩu", err);
+      showToast(err.message || "Không thể đặt lại mật khẩu.");
+    } finally {
+      setIsResettingPasswords(false);
     }
   }
 
@@ -717,7 +738,7 @@ export function App() {
 
         <section className="content-stage">
           {view === "home" && <HomeView deck={selectedDeck} canManage={canManage} isImporting={isImporting} isUpdatingMode={isUpdatingMode} isDeletingDeck={isDeletingDeck} importProgress={importProgress} onPickPdf={() => fileInputRef.current?.click()} onStart={startStudy} onModeChange={handleDeckPracticeMode} onDeleteDeck={(deck) => setDeckToDelete(deck)} />}
-          {view === "students" && canManage && <InstructorView students={students} rosters={rosters} studentResults={studentResults} generatedAccounts={generatedAccounts} isGenerating={isGeneratingAccounts} isRefreshingResults={isRefreshingResults} isExportingResults={isExportingResults} isDemo={Boolean(account.demo)} onGenerate={handleGenerateStudents} onExport={handleExportStudents} onExportResults={handleExportRosterResults} onRefreshResults={handleRefreshStudentResults} />}
+          {view === "students" && canManage && <InstructorView students={students} rosters={rosters} studentResults={studentResults} generatedAccounts={generatedAccounts} isGenerating={isGeneratingAccounts} isRefreshingResults={isRefreshingResults} isExportingResults={isExportingResults} isResettingPasswords={isResettingPasswords} isDemo={Boolean(account.demo)} onGenerate={handleGenerateStudents} onExport={handleExportStudents} onExportResults={handleExportRosterResults} onRefreshResults={handleRefreshStudentResults} onResetPasswords={handleResetPasswords} />}
           {view === "import" && importDraft && <ImportView draft={importDraft} isSaving={isSaving} connection={connection} onBack={() => setView("home")} onChangeTitle={(title) => setImportDraft((draft) => ({ ...draft, title }))} onChangePracticeMode={(practiceMode) => setImportDraft((draft) => ({ ...draft, practiceMode }))} onRemoveWord={removeDraftWord} onSave={saveImport} />}
           {view === "study" && study && currentWord && <StudyView study={study} currentWord={currentWord} quizChoices={quizChoices} typingInputRef={typingInputRef} isFullscreen={isFullscreen} onBack={() => setLeaveDialog(true)} onFullscreen={toggleFullscreen} onAnswer={answerCurrent} onInput={(input) => setStudy((current) => ({ ...current, input }))} onTypingSubmit={submitTyping} />}
           {view === "results" && lastResult && <ResultView result={lastResult} onAgain={startStudy} onHome={() => setView("home")} />}
@@ -821,7 +842,7 @@ function LoginView({ onLogin }) {
   );
 }
 
-function InstructorView({ students, rosters, studentResults, generatedAccounts, isGenerating, isRefreshingResults, isExportingResults, isDemo, onGenerate, onExport, onExportResults, onRefreshResults }) {
+function InstructorView({ students, rosters, studentResults, generatedAccounts, isGenerating, isRefreshingResults, isExportingResults, isResettingPasswords, isDemo, onGenerate, onExport, onExportResults, onRefreshResults, onResetPasswords }) {
   const rosterInputRef = useRef(null);
   const [rosterDraft, setRosterDraft] = useState(null);
   const [fallbackClass, setFallbackClass] = useState("");
@@ -931,13 +952,12 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
       </section>}
 
       <section className="student-directory">
-        <div className="table-title"><div><div className="eyebrow">Điểm học tập</div><h2>Kết quả mới nhất của sinh viên</h2><p>Chọn danh sách để xuất chính file đã nhập, có thêm cột Điểm và Lỗi trong quá trình làm bài.</p></div><div className="result-tools"><select className="roster-select" value={selectedRosterId} onChange={(event) => setSelectedRosterId(event.target.value)} disabled={!rosters.length}>{rosters.length ? rosters.map((roster) => <option key={roster.id} value={roster.id}>{roster.originalFileName} · {roster.studentCount} SV</option>) : <option value="">Chưa có file</option>}</select><button className="secondary-button password-toggle" type="button" onClick={() => setShowPasswords((shown) => !shown)}>{showPasswords ? <EyeOff size={17} /> : <Eye size={17} />}{showPasswords ? "Ẩn mật khẩu" : "Hiện mật khẩu"}</button><button className="secondary-button password-toggle" type="button" onClick={() => onExportResults(selectedRosterId)} disabled={!selectedRosterId || isExportingResults}>{isExportingResults ? <LoaderCircle className="spin" size={17} /> : <Download size={17} />}{isExportingResults ? "Đang xuất…" : "Xuất kết quả"}</button><button className="secondary-button password-toggle" type="button" onClick={onRefreshResults} disabled={isRefreshingResults}>{isRefreshingResults ? <LoaderCircle className="spin" size={17} /> : <RotateCcw size={17} />}{isRefreshingResults ? "Đang cập nhật…" : "Cập nhật điểm"}</button></div></div>
+        <div className="table-title"><div><div className="eyebrow">Điểm học tập</div><h2>Kết quả mới nhất của sinh viên</h2><p>Chọn danh sách để xuất chính file đã nhập, có thêm cột Điểm và Lỗi trong quá trình làm bài.</p></div><div className="result-tools"><select className="roster-select" value={selectedRosterId} onChange={(event) => setSelectedRosterId(event.target.value)} disabled={!rosters.length}>{rosters.length ? rosters.map((roster) => <option key={roster.id} value={roster.id}>{roster.originalFileName} · {roster.studentCount} SV</option>) : <option value="">Chưa có file</option>}</select><button className="secondary-button password-toggle" type="button" onClick={() => setShowPasswords((shown) => !shown)}>{showPasswords ? <EyeOff size={17} /> : <Eye size={17} />}{showPasswords ? "Ẩn mật khẩu" : "Hiện mật khẩu"}</button><button className="secondary-button password-toggle" type="button" onClick={() => onResetPasswords()} disabled={isResettingPasswords || !students.length} title="Đặt lại mật khẩu ngẫu nhiên cho tất cả sinh viên và lưu vào hệ thống">{isResettingPasswords ? <LoaderCircle className="spin" size={17} /> : <KeyRound size={17} />}{isResettingPasswords ? "Đang cấp lại…" : "Cấp lại MK"}</button><button className="secondary-button password-toggle" type="button" onClick={() => onExportResults(selectedRosterId)} disabled={!selectedRosterId || isExportingResults}>{isExportingResults ? <LoaderCircle className="spin" size={17} /> : <Download size={17} />}{isExportingResults ? "Đang xuất…" : "Xuất kết quả"}</button><button className="secondary-button password-toggle" type="button" onClick={onRefreshResults} disabled={isRefreshingResults}>{isRefreshingResults ? <LoaderCircle className="spin" size={17} /> : <RotateCcw size={17} />}{isRefreshingResults ? "Đang cập nhật…" : "Cập nhật điểm"}</button></div></div>
         {students.length ? <div className="student-table-wrap"><table className="student-table result-table"><thead><tr><th>Sinh viên</th><th>Tên đăng nhập</th><th>Mật khẩu</th><th>Lớp</th><th>Điểm gần nhất</th><th>Kết quả</th><th>Lỗi/vi phạm</th><th>Hoàn thành</th></tr></thead><tbody>{students.map((student) => {
           const result = latestResultByStudent.get(student.id);
           const issue = !result ? "—" : result.completed ? "Không" : result.violationReason === "fullscreen_exit" ? "Thoát toàn màn hình" : "Rời bài sớm";
           const rawPassword = student.initialPassword || generatedAccountMap.get(student.username) || generatedAccountMap.get(student.id);
-          const displayPassword = showPasswords ? (rawPassword || "••••••••••") : "••••••••••";
-          return <tr key={student.id}><td>{student.displayName}</td><td><code>{student.username}</code></td><td><code>{displayPassword}</code></td><td>{student.className}</td><td>{result ? <span className={`score-badge ${result.completed ? "" : "left-early"}`}>{result.score} điểm</span> : <span className="no-result">Chưa làm</span>}</td><td>{result ? <><strong>{result.completed ? `${result.correct}/${result.total}` : "Chưa hoàn thành"}</strong><small>{result.completed ? `${result.deckTitle || "Bộ từ"} · ${formatMode(result.mode)}` : "Đã trừ 5 điểm"}</small></> : "—"}</td><td><span className={result && !result.completed ? "issue-badge" : ""}>{issue}</span></td><td>{result?.completedAt ? new Intl.DateTimeFormat("vi-VN", { dateStyle: "short", timeStyle: "short" }).format(new Date(result.completedAt)) : "—"}</td></tr>;
+          return <tr key={student.id}><td>{student.displayName}</td><td><code>{student.username}</code></td><td>{showPasswords ? (rawPassword ? <code>{rawPassword}</code> : <span className="no-result" title="Mật khẩu tạo ở đợt trước khi có tính năng lưu. Bấm 'Cấp lại MK' ở trên để tạo mật khẩu mới.">Chưa lưu MK</span>) : <code>••••••••••</code>}</td><td>{student.className}</td><td>{result ? <span className={`score-badge ${result.completed ? "" : "left-early"}`}>{result.score} điểm</span> : <span className="no-result">Chưa làm</span>}</td><td>{result ? <><strong>{result.completed ? `${result.correct}/${result.total}` : "Chưa hoàn thành"}</strong><small>{result.completed ? `${result.deckTitle || "Bộ từ"} · ${formatMode(result.mode)}` : "Đã trừ 5 điểm"}</small></> : "—"}</td><td><span className={result && !result.completed ? "issue-badge" : ""}>{issue}</span></td><td>{result?.completedAt ? new Intl.DateTimeFormat("vi-VN", { dateStyle: "short", timeStyle: "short" }).format(new Date(result.completedAt)) : "—"}</td></tr>;
         })}</tbody></table></div> : <div className="empty-students"><GraduationCap size={28} /><strong>Chưa có tài khoản sinh viên</strong><span>Tải file Excel danh sách ở trên để tạo đợt đầu tiên.</span></div>}
       </section>
     </div>
