@@ -831,6 +831,15 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
   useEffect(() => {
     if (rosters[0]?.id) setSelectedRosterId(rosters[0].id);
   }, [rosters[0]?.id]);
+  const generatedAccountMap = useMemo(() => {
+    const map = new Map();
+    for (const acc of generatedAccounts) {
+      if (acc.username) map.set(acc.username, acc.password);
+      if (acc.id) map.set(acc.id, acc.password);
+    }
+    return map;
+  }, [generatedAccounts]);
+
   const latestResultByStudent = useMemo(() => {
     const latest = new Map();
     for (const result of studentResults) {
@@ -921,11 +930,13 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
       </section>}
 
       <section className="student-directory">
-        <div className="table-title"><div><div className="eyebrow">Điểm học tập</div><h2>Kết quả mới nhất của sinh viên</h2><p>Chọn danh sách để xuất chính file đã nhập, có thêm cột Điểm và Lỗi trong quá trình làm bài.</p></div><div className="result-tools"><select className="roster-select" value={selectedRosterId} onChange={(event) => setSelectedRosterId(event.target.value)} disabled={!rosters.length}>{rosters.length ? rosters.map((roster) => <option key={roster.id} value={roster.id}>{roster.originalFileName} · {roster.studentCount} SV</option>) : <option value="">Chưa có file</option>}</select><button className="secondary-button password-toggle" type="button" onClick={() => onExportResults(selectedRosterId)} disabled={!selectedRosterId || isExportingResults}>{isExportingResults ? <LoaderCircle className="spin" size={17} /> : <Download size={17} />}{isExportingResults ? "Đang xuất…" : "Xuất kết quả"}</button><button className="secondary-button password-toggle" type="button" onClick={onRefreshResults} disabled={isRefreshingResults}>{isRefreshingResults ? <LoaderCircle className="spin" size={17} /> : <RotateCcw size={17} />}{isRefreshingResults ? "Đang cập nhật…" : "Cập nhật điểm"}</button></div></div>
-        {students.length ? <div className="student-table-wrap"><table className="student-table result-table"><thead><tr><th>Sinh viên</th><th>Tên đăng nhập</th><th>Lớp</th><th>Điểm gần nhất</th><th>Kết quả</th><th>Lỗi/vi phạm</th><th>Hoàn thành</th></tr></thead><tbody>{students.map((student) => {
+        <div className="table-title"><div><div className="eyebrow">Điểm học tập</div><h2>Kết quả mới nhất của sinh viên</h2><p>Chọn danh sách để xuất chính file đã nhập, có thêm cột Điểm và Lỗi trong quá trình làm bài.</p></div><div className="result-tools"><select className="roster-select" value={selectedRosterId} onChange={(event) => setSelectedRosterId(event.target.value)} disabled={!rosters.length}>{rosters.length ? rosters.map((roster) => <option key={roster.id} value={roster.id}>{roster.originalFileName} · {roster.studentCount} SV</option>) : <option value="">Chưa có file</option>}</select><button className="secondary-button password-toggle" type="button" onClick={() => setShowPasswords((shown) => !shown)}>{showPasswords ? <EyeOff size={17} /> : <Eye size={17} />}{showPasswords ? "Ẩn mật khẩu" : "Hiện mật khẩu"}</button><button className="secondary-button password-toggle" type="button" onClick={() => onExportResults(selectedRosterId)} disabled={!selectedRosterId || isExportingResults}>{isExportingResults ? <LoaderCircle className="spin" size={17} /> : <Download size={17} />}{isExportingResults ? "Đang xuất…" : "Xuất kết quả"}</button><button className="secondary-button password-toggle" type="button" onClick={onRefreshResults} disabled={isRefreshingResults}>{isRefreshingResults ? <LoaderCircle className="spin" size={17} /> : <RotateCcw size={17} />}{isRefreshingResults ? "Đang cập nhật…" : "Cập nhật điểm"}</button></div></div>
+        {students.length ? <div className="student-table-wrap"><table className="student-table result-table"><thead><tr><th>Sinh viên</th><th>Tên đăng nhập</th><th>Mật khẩu</th><th>Lớp</th><th>Điểm gần nhất</th><th>Kết quả</th><th>Lỗi/vi phạm</th><th>Hoàn thành</th></tr></thead><tbody>{students.map((student) => {
           const result = latestResultByStudent.get(student.id);
           const issue = !result ? "—" : result.completed ? "Không" : result.violationReason === "fullscreen_exit" ? "Thoát toàn màn hình" : "Rời bài sớm";
-          return <tr key={student.id}><td>{student.displayName}</td><td><code>{student.username}</code></td><td>{student.className}</td><td>{result ? <span className={`score-badge ${result.completed ? "" : "left-early"}`}>{result.score} điểm</span> : <span className="no-result">Chưa làm</span>}</td><td>{result ? <><strong>{result.completed ? `${result.correct}/${result.total}` : "Chưa hoàn thành"}</strong><small>{result.completed ? `${result.deckTitle || "Bộ từ"} · ${formatMode(result.mode)}` : "Đã trừ 5 điểm"}</small></> : "—"}</td><td><span className={result && !result.completed ? "issue-badge" : ""}>{issue}</span></td><td>{result?.completedAt ? new Intl.DateTimeFormat("vi-VN", { dateStyle: "short", timeStyle: "short" }).format(new Date(result.completedAt)) : "—"}</td></tr>;
+          const rawPassword = student.initialPassword || generatedAccountMap.get(student.username) || generatedAccountMap.get(student.id);
+          const displayPassword = showPasswords ? (rawPassword || "••••••••••") : "••••••••••";
+          return <tr key={student.id}><td>{student.displayName}</td><td><code>{student.username}</code></td><td><code>{displayPassword}</code></td><td>{student.className}</td><td>{result ? <span className={`score-badge ${result.completed ? "" : "left-early"}`}>{result.score} điểm</span> : <span className="no-result">Chưa làm</span>}</td><td>{result ? <><strong>{result.completed ? `${result.correct}/${result.total}` : "Chưa hoàn thành"}</strong><small>{result.completed ? `${result.deckTitle || "Bộ từ"} · ${formatMode(result.mode)}` : "Đã trừ 5 điểm"}</small></> : "—"}</td><td><span className={result && !result.completed ? "issue-badge" : ""}>{issue}</span></td><td>{result?.completedAt ? new Intl.DateTimeFormat("vi-VN", { dateStyle: "short", timeStyle: "short" }).format(new Date(result.completedAt)) : "—"}</td></tr>;
         })}</tbody></table></div> : <div className="empty-students"><GraduationCap size={28} /><strong>Chưa có tài khoản sinh viên</strong><span>Tải file Excel danh sách ở trên để tạo đợt đầu tiên.</span></div>}
       </section>
     </div>

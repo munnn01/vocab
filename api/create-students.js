@@ -86,7 +86,7 @@ async function createOneStudent(admin, instructor, rosterId, student) {
     if (error?.message?.toLowerCase().includes("already")) continue;
     if (error || !data.user) throw error || new Error("Không tạo được người dùng Supabase.");
 
-    const { error: profileError } = await admin.from("profiles").upsert({
+    const profilePayload = {
       user_id: data.user.id,
       role: "student",
       username,
@@ -95,7 +95,14 @@ async function createOneStudent(admin, instructor, rosterId, student) {
       class_name: student.className,
       roster_id: rosterId,
       roster_row: student.rowNumber,
-    });
+      initial_password: password,
+    };
+    let { error: profileError } = await admin.from("profiles").upsert(profilePayload);
+    if (profileError && profileError.message?.includes("initial_password")) {
+      delete profilePayload.initial_password;
+      const retry = await admin.from("profiles").upsert(profilePayload);
+      profileError = retry.error;
+    }
     if (profileError) {
       await admin.auth.admin.deleteUser(data.user.id);
       throw profileError;

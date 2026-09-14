@@ -85,12 +85,24 @@ export async function signOut() {
 
 export async function loadStudents() {
   const user = await requireUser();
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from("profiles")
-    .select("user_id,username,display_name,class_name,roster_id,roster_row,created_at")
+    .select("user_id,username,display_name,class_name,roster_id,roster_row,initial_password,created_at")
     .eq("instructor_id", user.id)
     .order("created_at", { ascending: false });
-  if (error) throw error;
+
+  if (error && error.message?.includes("initial_password")) {
+    const retry = await supabase
+      .from("profiles")
+      .select("user_id,username,display_name,class_name,roster_id,roster_row,created_at")
+      .eq("instructor_id", user.id)
+      .order("created_at", { ascending: false });
+    if (retry.error) throw retry.error;
+    data = retry.data;
+  } else if (error) {
+    throw error;
+  }
+
   return (data || []).map((student) => ({
     id: student.user_id,
     username: student.username,
@@ -98,6 +110,7 @@ export async function loadStudents() {
     className: student.class_name,
     rosterId: student.roster_id,
     rosterRow: student.roster_row,
+    initialPassword: student.initial_password,
     createdAt: student.created_at,
   }));
 }
