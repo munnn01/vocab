@@ -120,18 +120,61 @@ export default async function handler(request, response) {
     return response.status(405).json({ error: "Chỉ hỗ trợ POST." });
   }
 
-  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!supabaseUrl || !serviceRoleKey) return response.status(503).json({ error: "Máy chủ chưa được cấu hình Supabase." });
+  const supabaseUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "").trim();
+  const serviceRoleKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
+  const anonKey = (process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || "").trim();
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    return response.status(503).json({ error: "Máy chủ chưa được cấu hình Supabase (thiếu SUPABASE_URL hoặc SUPABASE_SERVICE_ROLE_KEY trên Vercel)." });
+  }
 
   const token = request.headers.authorization?.replace(/^Bearer\s+/i, "");
-  if (!token) return response.status(401).json({ error: "Bạn cần đăng nhập lại." });
+  if (!token) return response.status(401).json({ error: "Bạn cần đăng nhập lại (không tìm thấy token)." });
+
+  // 1. Dùng token của người dùng để xác minh danh tính và đọc hồ sơ trong ngữ cảnh authenticated user
+  const userClient = createClient(supabaseUrl, anonKey || serviceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: { headers: { Authorization: `Bearer ${token}` } },
+  });
+
+  const { data: userData, error: userError } = await userClient.auth.getUser();
+  if (userError || !userData?.user) {
+    return response.status(401).json({ error: `Phiên đăng nhập không hợp lệ: ${userError?.message || "Không xác minh được người dùng."}` });
+  }
+
+  // 2. Kiểm tra vai trò của người dùng
+  let profile = null;
+  const { data: userProfile, error: userProfileError } = await userClient
+    .from("profiles")
+    .select("role")
+    .eq("user_id", userData.user.id)
+    .maybeSingle();
+
+  if (userProfile) {
+    profile = userProfile;
+  } else {
+    // Thử truy vấn bằng admin client nếu client người dùng chưa đọc được
+    const adminClient = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
+    const { data: adminProfile, error: adminProfileError } = await adminClient
+      .from("profiles")
+      .select("role")
+      .eq("user_id", userData.user.id)
+      .maybeSingle();
+
+    if (adminProfile) {
+      profile = adminProfile;
+    } else {
+      console.error("Profile check error:", { userProfileError, adminProfileError, userId: userData.user.id });
+      const detail = userProfileError?.message || adminProfileError?.message || "Không tìm thấy hồ sơ người dùng trong bảng profiles.";
+      return response.status(403).json({ error: `Không thể xác minh vai trò: ${detail}` });
+    }
+  }
+
+  if (profile.role !== "instructor") {
+    return response.status(403).json({ error: `Tài khoản của bạn có vai trò "${profile.role}", chỉ giảng viên mới được tạo tài khoản sinh viên.` });
+  }
 
   const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
-  const { data: userData, error: userError } = await admin.auth.getUser(token);
-  if (userError || !userData.user) return response.status(401).json({ error: "Phiên đăng nhập không hợp lệ." });
-  const { data: profile, error: profileError } = await admin.from("profiles").select("role").eq("user_id", userData.user.id).single();
-  if (profileError || profile?.role !== "instructor") return response.status(403).json({ error: "Chỉ giảng viên mới được tạo tài khoản sinh viên." });
 
   let workbook;
   let students;
@@ -158,7 +201,7 @@ export default async function handler(request, response) {
   }).select("id,class_name,original_file_name,sheet_name,student_count,created_at").single();
   if (rosterError || !roster) {
     console.error("create-students roster", rosterError);
-    return response.status(500).json({ error: "Chưa lưu được file danh sách. Hãy chạy bản cập nhật Supabase mới nhất." });
+    return response.status(500).json({ error: `Chưa lưu được file danh sách: ${rosterError?.message || "Hãy chạy bản cập nhật Supabase mới nhất."}` });
   }
 
   const accounts = [];
