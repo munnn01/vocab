@@ -253,18 +253,16 @@ export function App() {
       completed,
       violationReason: resolvedViolationReason,
     }).then(() => {
-      if (finalStudy.deckId !== "demo") {
-        setSessions((current) => [{
-          id: crypto.randomUUID(),
-          deck_id: finalStudy.deckId,
-          score: finalStudy.score,
-          correct_count: finalStudy.correct,
-          total_count: finalStudy.items.length,
-          completed,
-          violation_reason: resolvedViolationReason,
-          created_at: new Date().toISOString(),
-        }, ...current]);
-      }
+      setSessions((current) => [{
+        id: crypto.randomUUID(),
+        deck_id: finalStudy.deckId,
+        score: finalStudy.score,
+        correct_count: finalStudy.correct,
+        total_count: finalStudy.items.length,
+        completed,
+        violation_reason: resolvedViolationReason,
+        created_at: new Date().toISOString(),
+      }, ...current]);
     }).catch((error) => {
       console.error("Không thể lưu phiên học", error);
       showToast("Lỗi khi lưu kết quả lên máy chủ: " + (error.message || error));
@@ -951,19 +949,29 @@ export function App() {
       const latestResults = account.demo ? studentResults : await loadStudentResults();
       if (!account.demo) setStudentResults(latestResults);
       const latestByStudent = new Map();
+      const practiceCountByStudent = new Map();
       for (const result of latestResults) {
         if (!latestByStudent.has(result.studentId)) latestByStudent.set(result.studentId, result);
+        if (result.studentId) {
+          practiceCountByStudent.set(result.studentId, (practiceCountByStudent.get(result.studentId) || 0) + 1);
+        }
       }
       const resultRows = students
         .filter((student) => student.rosterId === rosterId && student.rosterRow)
         .map((student) => {
           const result = latestByStudent.get(student.id);
           const issue = result ? formatViolationText(result) : "Chưa làm";
-          return { rowNumber: student.rosterRow, score: result?.score ?? "", issue };
+          const count = practiceCountByStudent.get(student.id) || 0;
+          return {
+            rowNumber: student.rosterRow,
+            score: result?.score ?? "",
+            practiceCount: count,
+            issue,
+          };
         });
       if (!resultRows.length) throw new Error("Không tìm thấy sinh viên thuộc danh sách này.");
       downloadRosterResultsXlsx(workbook, resultRows);
-      showToast("Đã xuất file gốc với cột Điểm và Lỗi trong quá trình làm bài.");
+      showToast("Đã xuất file gốc với cột Điểm, Số lần luyện và Lỗi trong quá trình làm bài.");
     } catch (error) {
       console.error("Không thể xuất kết quả vào file gốc", error);
       showToast(error.message || "Chưa xuất được file kết quả.");
@@ -1060,6 +1068,11 @@ export function App() {
               <div><Flame size={22} /> Điểm phiên</div>
               <strong>{lastSession?.score ?? 0} <small>điểm</small></strong>
               <div className="score-track"><span style={{ width: `${Math.min(100, Math.max(8, lastSession?.score || 8))}%` }} /></div>
+              <div className="sidebar-practice-count">
+                <RotateCcw size={14} />
+                <span>Số lần luyện từ vựng:</span>
+                <b>{sessions.length} lần</b>
+              </div>
               <p>{lastSession ? "Kết quả của lần làm bài gần nhất." : "Hoàn thành bài đầu tiên để lưu điểm."}</p>
             </div>}
 
@@ -1143,7 +1156,9 @@ export function App() {
                             return deckMeta(deck);
                           }
                           const studentDeadline = getDeckLockAtForStudent(deck, account);
-                          return studentDeadline ? `⏳ Hạn: ${formatLockDateTime(studentDeadline)}` : deckMeta(deck);
+                          const deckCount = (sessions || []).filter((s) => s.deck_id === deck.id).length;
+                          const countText = deckCount > 0 ? ` · Đã luyện ${deckCount} lần` : "";
+                          return studentDeadline ? `⏳ Hạn: ${formatLockDateTime(studentDeadline)}${countText}` : `${deckMeta(deck)}${countText}`;
                         })()}
                       </small>
                     </span>
@@ -1192,6 +1207,7 @@ export function App() {
           {(view === "deck" || (!canManage && (view === "create-deck" || view === "home"))) && (
             <HomeView
               deck={selectedDeck}
+              sessions={sessions}
               account={account}
               canManage={canManage}
               availableClasses={availableClasses}
@@ -1261,6 +1277,7 @@ export function App() {
           {view === "results" && lastResult && (
             <ResultView
               result={lastResult}
+              practiceCount={sessions.length}
               onAgain={startStudy}
               onHome={() => setView(canManage ? "create-deck" : "deck")}
             />
@@ -1493,6 +1510,16 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
     return latest;
   }, [studentResults]);
 
+  const practiceCountByStudent = useMemo(() => {
+    const counts = new Map();
+    for (const result of studentResults) {
+      if (result.studentId) {
+        counts.set(result.studentId, (counts.get(result.studentId) || 0) + 1);
+      }
+    }
+    return counts;
+  }, [studentResults]);
+
   const classList = useMemo(() => {
     const set = new Set();
     for (const s of students) {
@@ -1525,6 +1552,14 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
     }
     return count;
   }, [filteredStudents, latestResultByStudent]);
+
+  const totalPracticeCount = useMemo(() => {
+    let total = 0;
+    for (const student of filteredStudents) {
+      total += practiceCountByStudent.get(student.id) || 0;
+    }
+    return total;
+  }, [filteredStudents, practiceCountByStudent]);
 
   async function readRoster(file) {
     if (!file) return;
@@ -1593,6 +1628,13 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
             <div>
               <strong>{filteredResultCount}</strong>
               <small>đã hoàn thành bài</small>
+            </div>
+          </div>
+          <div className="student-count practice-summary-card">
+            <span className="count-icon-wrap rotate-icon"><RotateCcw size={20} /></span>
+            <div>
+              <strong>{totalPracticeCount}</strong>
+              <small>lượt luyện từ vựng</small>
             </div>
           </div>
           {classList.length > 0 && (
@@ -1852,6 +1894,7 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
                   <th>Tên đăng nhập</th>
                   <th>Mật khẩu</th>
                   <th>Lớp</th>
+                  <th>Số lần luyện</th>
                   <th>Điểm gần nhất</th>
                   <th>Kết quả</th>
                   <th>Lỗi/vi phạm</th>
@@ -1861,6 +1904,7 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
               <tbody>
                 {filteredStudents.map((student) => {
                   const result = latestResultByStudent.get(student.id);
+                  const practiceCount = practiceCountByStudent.get(student.id) || 0;
                   const issue = formatViolationText(result);
                   const badgeClass = getViolationBadgeClass(result);
                   const rawPassword = student.initialPassword || generatedAccountMap.get(student.username) || generatedAccountMap.get(student.id);
@@ -1876,6 +1920,15 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
                         )}
                       </td>
                       <td><span className="class-name-tag">{student.className}</span></td>
+                      <td>
+                        {practiceCount > 0 ? (
+                          <span className="practice-count-badge">
+                            <RotateCcw size={12} /> {practiceCount} lần
+                          </span>
+                        ) : (
+                          <span className="no-result">Chưa luyện</span>
+                        )}
+                      </td>
                       <td>
                         {result ? (
                           <span className={`score-badge ${result.completed ? "" : "left-early"}`}>
@@ -2489,6 +2542,7 @@ function DeckLockSettings({
 
 function HomeView({
   deck,
+  sessions = [],
   account,
   canManage,
   availableClasses = [],
@@ -2550,6 +2604,15 @@ function HomeView({
             <span>{canManage ? "từ trong bộ này" : "từ cần hoàn thành"}</span>
           </div>
         </div>
+        {!canManage && (
+          <div className="overview-practice-stat">
+            <span className="overview-icon practice-icon"><RotateCcw size={22} /></span>
+            <div>
+              <strong>{(sessions || []).filter((s) => s.deck_id === deck.id).length} <small>lần</small></strong>
+              <span>số lần đã luyện</span>
+            </div>
+          </div>
+        )}
         <div className="pos-cloud">{posCounts.map(([pos, count]) => <span key={pos}>{POS_LABELS[pos]} <b>{count}</b></span>)}</div>
       </div>
 
@@ -2857,7 +2920,7 @@ function StudyView({ study, currentWord, quizChoices, typingInputRef, isFullscre
   );
 }
 
-function ResultView({ result, onAgain, onHome }) {
+function ResultView({ result, practiceCount, onAgain, onHome }) {
   const percentage = Math.round((result.correct / result.total) * 100);
   const violationText = formatViolationText(result);
   const hasViolation = Boolean(result.violationReason);
@@ -2876,7 +2939,13 @@ function ResultView({ result, onAgain, onHome }) {
           </div>
         </div>
       )}
-      <div className="result-stats"><div><strong>{result.correct}/{result.total}</strong><span>câu đúng</span></div><div><strong>{percentage}%</strong><span>độ chính xác</span></div></div>
+      <div className="result-stats">
+        <div><strong>{result.correct}/{result.total}</strong><span>câu đúng</span></div>
+        <div><strong>{percentage}%</strong><span>độ chính xác</span></div>
+        {typeof practiceCount === "number" && (
+          <div><strong>{practiceCount || 1}</strong><span>lần luyện</span></div>
+        )}
+      </div>
       <div className="result-actions"><button className="secondary-button" type="button" onClick={onHome}>Về bộ từ</button><button className="primary-button" type="button" onClick={onAgain}><RotateCcw size={18} /> Học lại</button></div>
     </div>
   );

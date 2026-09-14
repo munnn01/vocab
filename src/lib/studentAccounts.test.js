@@ -83,13 +83,15 @@ describe("student roster helpers", () => {
   it("adds numeric scores and plain-text violation status to the original roster", () => {
     const bytes = createRosterBytes();
     const output = buildRosterResultsXlsx(workbookFrom(bytes), [
-      { rowNumber: 2, score: 87, issue: "Không" },
-      { rowNumber: 3, score: -5, issue: "Có – thoát toàn màn hình" },
+      { rowNumber: 2, score: 87, practiceCount: 2, issue: "Không" },
+      { rowNumber: 3, score: -5, practiceCount: 1, issue: "Có – thoát toàn màn hình" },
     ]);
     const sheet = strFromU8(unzipSync(output)["xl/worksheets/sheet1.xml"]);
     expect(sheet).toContain("Điểm");
+    expect(sheet).toContain("Số lần luyện");
     expect(sheet).toContain("Lỗi trong quá trình làm bài");
     expect(sheet).toContain("<v>87</v>");
+    expect(sheet).toContain("<v>2</v>");
     expect(sheet).toContain("Có – thoát toàn màn hình");
   });
 

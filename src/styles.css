@@ -84,6 +84,8 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 .score-card p { margin: 9px 0 0; color: var(--muted); font-size: .72rem; line-height: 1.55; }
 .score-track { height: 5px; background: rgba(255,255,255,.08); border-radius: 9px; overflow: hidden; }
 .score-track span { display: block; min-width: 8%; height: 100%; background: var(--coral); transition: width .4s ease; }
+.sidebar-practice-count { display: flex; align-items: center; gap: 7px; margin-top: 13px; padding-top: 10px; border-top: 1px dashed var(--line); font-size: .76rem; color: var(--muted); }
+.sidebar-practice-count b { color: #8b4513; font-weight: 800; margin-left: auto; font-size: .84rem; }
 .teacher-sidebar-card { border-color: rgba(44, 111, 187, .2); background: linear-gradient(145deg, rgba(44, 111, 187, .08), rgba(44, 111, 187, .025)); }
 .teacher-sidebar-card > div:first-child { color: #2c6fbb; }
 .section-heading { display: flex; justify-content: space-between; align-items: center; margin: 0 5px 11px; color: var(--muted); font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
@@ -155,6 +157,13 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 .overview-main > div > strong, .overview-main > div > span { display: block; }
 .overview-main > div > strong { font-size: 1.85rem; line-height: 1; color: var(--ink-strong); font-weight: 850; }
 .overview-main div span { margin-top: 6px; color: var(--muted); font-size: .78rem; font-weight: 600; }
+.overview-practice-stat { display: flex; align-items: center; gap: 14px; padding-left: 24px; border-left: 1.5px solid var(--line); }
+.overview-icon.practice-icon { flex: 0 0 46px; width: 46px; height: 46px; border-radius: 13px; background: linear-gradient(135deg, #00796b, #004d40); }
+.overview-icon.practice-icon svg { width: 22px; height: 22px; }
+.overview-practice-stat > div > strong, .overview-practice-stat > div > span { display: block; }
+.overview-practice-stat > div > strong { font-size: 1.65rem; line-height: 1; color: #004d40; font-weight: 850; }
+.overview-practice-stat > div > strong small { font-size: .82rem; font-weight: 700; color: var(--muted); margin-left: 2px; }
+.overview-practice-stat div span { margin-top: 5px; color: var(--muted); font-size: .76rem; font-weight: 600; }
 .pos-cloud { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
 .pos-cloud span { padding: 7px 12px; border: 1px solid var(--line); border-radius: 9px; color: #4a2e1b; background: #f7f1e7; font-size: .74rem; font-weight: 700; }
 .pos-cloud b { margin-left: 5px; color: #8b4513; }
@@ -299,7 +308,7 @@ kbd { margin-left: 6px; padding: 3px 6px; border: 1px solid rgba(255,255,255,.14
 .result-score span, .result-score strong { display: block; }
 .result-score span { color: var(--muted); font-size: .76rem; font-weight: 600; }
 .result-score strong { margin-top: 3px; color: #8b4513; font-family: "Cascadia Code", monospace; font-size: 3.7rem; letter-spacing: -.07em; font-weight: 800; }
-.result-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.result-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
 .result-stats > div { padding: 15px; border: 1px solid var(--line); border-radius: 13px; background: var(--panel-2); }
 .result-stats strong, .result-stats span { display: block; }
 .result-stats strong { font-size: 1.25rem; color: var(--ink); }
@@ -1113,6 +1122,7 @@ kbd { margin-left: 6px; padding: 3px 6px; border: 1px solid rgba(255,255,255,.14
 .count-icon-wrap.users-icon { background: rgba(21, 101, 192, 0.1); color: #1565c0; border: 1px solid rgba(21, 101, 192, 0.2); }
 .count-icon-wrap.trophy-icon { background: rgba(139, 69, 19, 0.1); color: #8b4513; border: 1px solid rgba(139, 69, 19, 0.2); }
 .count-icon-wrap.grad-icon { background: rgba(106, 27, 154, 0.1); color: #6a1b9a; border: 1px solid rgba(106, 27, 154, 0.2); }
+.count-icon-wrap.rotate-icon { background: rgba(0, 121, 107, 0.1); color: #00796b; border: 1px solid rgba(0, 121, 107, 0.2); }
 .student-count strong { display: block; font-size: 1.35rem; line-height: 1.1; color: var(--ink-strong); letter-spacing: -0.02em; font-weight: 800; }
 .student-count small { display: block; font-size: 0.72rem; color: var(--muted); margin-top: 3px; font-weight: 600; }
 
@@ -1158,10 +1168,11 @@ kbd { margin-left: 6px; padding: 3px 6px; border: 1px solid rgba(255,255,255,.14
 .student-table tbody tr:hover td { background: #faf5ee; }
 .student-table code { color: #8b4513; font-family: "Cascadia Code", monospace; font-size: .78rem; background: rgba(139, 69, 19, 0.08); padding: 3px 8px; border-radius: 6px; border: 1px solid rgba(139, 69, 19, 0.2); font-weight: 700; }
 .class-name-tag { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 6px; font-size: 0.72rem; font-weight: 750; color: #1565c0; background: rgba(21, 101, 192, 0.08); border: 1px solid rgba(21, 101, 192, 0.22); }
-.result-table { min-width: 1040px; }
+.result-table { min-width: 1140px; }
 .result-table td strong, .result-table td small { display: block; }
 .result-table td small { max-width: 220px; margin-top: 4px; overflow: hidden; color: var(--muted); font-size: .68rem; text-overflow: ellipsis; white-space: nowrap; }
-.score-badge, .no-result { display: inline-flex; align-items: center; min-height: 28px; padding: 0 12px; border-radius: 99px; font-size: .74rem; font-weight: 800; white-space: nowrap; }
+.score-badge, .no-result, .practice-count-badge { display: inline-flex; align-items: center; min-height: 28px; padding: 0 12px; border-radius: 99px; font-size: .74rem; font-weight: 800; white-space: nowrap; }
+.practice-count-badge { gap: 5px; color: #00695c; background: rgba(0, 105, 92, 0.09); border: 1px solid rgba(0, 105, 92, 0.22); }
 .score-badge { color: #ffffff; background: #2e7d32; box-shadow: 0 2px 8px rgba(46, 125, 50, 0.25); }
 .score-badge.left-early { color: #c0392b; background: rgba(192, 57, 43, 0.1); border: 1px solid rgba(192, 57, 43, 0.3); box-shadow: none; }
 .issue-badge {

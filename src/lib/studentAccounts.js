@@ -394,6 +394,7 @@ export function buildRosterResultsXlsx(workbook, resultRows) {
     rows: resultRows,
     columns: [
       { key: "score", header: "Điểm", width: 12, type: "number" },
+      { key: "practiceCount", header: "Số lần luyện", width: 14, type: "number" },
       { key: "issue", header: "Lỗi trong quá trình làm bài", width: 30 },
     ],
   });
