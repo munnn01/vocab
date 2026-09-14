@@ -10,7 +10,7 @@ import {
   createDeck, createStudentAccounts, deleteDeck, deleteRoster, deleteOrphanedRosters, getCurrentAccount, isSupabaseConfigured,
   loadLibrary, loadRosterWorkbook, loadRosters, loadStudentResults, loadStudents,
   resetStudentPasswords, saveStudySession, signIn, signOut,
-  updateDeckPracticeMode, updateDeckClassAccess, updateDeckLockAt,
+  updateDeckPracticeMode, updateDeckClassAccess, updateDeckLockAt, updateDeckMaxAttempts,
 } from "./lib/supabase";
 import {
   createDemoStudentAccounts, downloadRosterCredentialsXlsx, downloadRosterResultsXlsx,
@@ -85,6 +85,19 @@ export function isDeckLockedForStudent(deck, account) {
     }
   }
   return false;
+}
+
+export function getDeckStudentAttempts(deckId, sessions = []) {
+  if (!deckId || !Array.isArray(sessions)) return 0;
+  return sessions.filter((s) => s.deck_id === deckId).length;
+}
+
+export function isDeckAttemptsExhausted(deck, account, sessions = []) {
+  if (!deck || account?.role !== "student") return false;
+  const max = Number(deck.maxAttempts);
+  if (!max || max <= 0) return false;
+  const attempts = getDeckStudentAttempts(deck.id, sessions);
+  return attempts >= max;
 }
 
 export function formatViolationText(result) {
@@ -179,6 +192,7 @@ export function App() {
   const [isUpdatingMode, setIsUpdatingMode] = useState(false);
   const [isUpdatingAccess, setIsUpdatingAccess] = useState(false);
   const [isUpdatingLockAt, setIsUpdatingLockAt] = useState(false);
+  const [isUpdatingMaxAttempts, setIsUpdatingMaxAttempts] = useState(false);
   const [selectedDeckId, setSelectedDeckId] = useState("demo");
   const [connection, setConnection] = useState(isSupabaseConfigured ? "connecting" : "demo");
   const [importProgress, setImportProgress] = useState(0);
@@ -388,6 +402,10 @@ export function App() {
       }
       return;
     }
+    if (isDeckAttemptsExhausted(selectedDeck, account, sessions)) {
+      showToast(`Bạn đã sử dụng hết số lần làm bài cho phép của bài kiểm tra này (${selectedDeck.maxAttempts} lần).`);
+      return;
+    }
     const mode = PRACTICE_MODES.some((item) => item.id === selectedDeck.practiceMode)
       ? selectedDeck.practiceMode
       : "typing";
@@ -420,7 +438,7 @@ export function App() {
     });
     setView("study");
     setLastResult(null);
-  }, [account?.role, selectedDeck, showToast]);
+  }, [account, selectedDeck, sessions, showToast]);
 
   useEffect(() => {
     const context = document.modelContext;
@@ -644,6 +662,7 @@ export function App() {
         pageCount: parsed.pageCount,
         practiceMode: "typing",
         unlockedClasses: null,
+        maxAttempts: null,
       });
       setView("import");
     } catch (error) {
@@ -666,6 +685,7 @@ export function App() {
           practiceMode: importDraft.practiceMode,
           words: importDraft.words,
           unlockedClasses: importDraft.unlockedClasses,
+          maxAttempts: importDraft.maxAttempts,
         });
       } else {
         savedDeck = {
@@ -676,6 +696,7 @@ export function App() {
           words: importDraft.words,
           practiceMode: importDraft.practiceMode,
           unlockedClasses: importDraft.unlockedClasses,
+          maxAttempts: importDraft.maxAttempts,
           isTemporary: true,
         };
       }
@@ -820,6 +841,37 @@ export function App() {
       showToast("Chưa cập nhật được thời hạn khóa bài.");
     } finally {
       setIsUpdatingLockAt(false);
+    }
+  }
+
+  async function handleDeckMaxAttempts(maxAttempts) {
+    if (!selectedDeck) return;
+    const previousMax = selectedDeck.maxAttempts ?? null;
+    const newMax = maxAttempts && Number(maxAttempts) > 0 ? Number(maxAttempts) : null;
+
+    setDecks((current) =>
+      current.map((deck) =>
+        deck.id === selectedDeck.id ? { ...deck, maxAttempts: newMax } : deck
+      )
+    );
+    if (selectedDeck.isDemo || selectedDeck.isTemporary) {
+      showToast(newMax ? `Đã lưu giới hạn: ${newMax} lần làm bài.` : "Đã lưu: Không giới hạn số lần làm bài.");
+      return;
+    }
+    setIsUpdatingMaxAttempts(true);
+    try {
+      await updateDeckMaxAttempts(selectedDeck.id, newMax);
+      showToast(newMax ? `Đã lưu giới hạn: ${newMax} lần làm bài.` : "Đã lưu: Không giới hạn số lần làm bài.");
+    } catch (error) {
+      console.error("Không thể cập nhật số lần làm bài", error);
+      setDecks((current) =>
+        current.map((deck) =>
+          deck.id === selectedDeck.id ? { ...deck, maxAttempts: previousMax } : deck
+        )
+      );
+      showToast("Chưa cập nhật được số lần làm bài.");
+    } finally {
+      setIsUpdatingMaxAttempts(false);
     }
   }
 
@@ -1151,12 +1203,20 @@ export function App() {
                           }
                           if (canManage) {
                             const lockCount = Object.keys(deck.lockAtByClass || {}).length;
-                            if (lockCount > 1) return `⏳ Hạn: ${lockCount} lớp`;
-                            if (deck.lockAt) return `⏳ Hạn: ${formatLockDateTime(deck.lockAt)}`;
-                            return deckMeta(deck);
+                            const attemptsText = deck.maxAttempts ? ` · Tối đa ${deck.maxAttempts} lần` : "";
+                            if (lockCount > 1) return `⏳ Hạn: ${lockCount} lớp${attemptsText}`;
+                            if (deck.lockAt) return `⏳ Hạn: ${formatLockDateTime(deck.lockAt)}${attemptsText}`;
+                            return `${deckMeta(deck)}${attemptsText}`;
                           }
                           const studentDeadline = getDeckLockAtForStudent(deck, account);
                           const deckCount = (sessions || []).filter((s) => s.deck_id === deck.id).length;
+                          if (deck.maxAttempts) {
+                            if (deckCount >= deck.maxAttempts) {
+                              return `🔒 Đã hết lượt (${deckCount}/${deck.maxAttempts} lần)`;
+                            }
+                            const countText = ` · Đã luyện ${deckCount}/${deck.maxAttempts} lần`;
+                            return studentDeadline ? `⏳ Hạn: ${formatLockDateTime(studentDeadline)}${countText}` : `${deckMeta(deck)}${countText}`;
+                          }
                           const countText = deckCount > 0 ? ` · Đã luyện ${deckCount} lần` : "";
                           return studentDeadline ? `⏳ Hạn: ${formatLockDateTime(studentDeadline)}${countText}` : `${deckMeta(deck)}${countText}`;
                         })()}
@@ -1215,6 +1275,7 @@ export function App() {
               isUpdatingMode={isUpdatingMode}
               isUpdatingAccess={isUpdatingAccess}
               isUpdatingLockAt={isUpdatingLockAt}
+              isUpdatingMaxAttempts={isUpdatingMaxAttempts}
               isDeletingDeck={isDeletingDeck}
               importProgress={importProgress}
               onPickPdf={() => fileInputRef.current?.click()}
@@ -1222,6 +1283,7 @@ export function App() {
               onModeChange={handleDeckPracticeMode}
               onClassAccessChange={handleDeckClassAccess}
               onLockAtChange={handleDeckLockAt}
+              onMaxAttemptsChange={handleDeckMaxAttempts}
               onDeleteDeck={(deck) => setDeckToDelete(deck)}
               onNavigateCreateDeck={() => setView("create-deck")}
             />
@@ -1256,6 +1318,7 @@ export function App() {
               onChangeTitle={(title) => setImportDraft((draft) => ({ ...draft, title }))}
               onChangePracticeMode={(practiceMode) => setImportDraft((draft) => ({ ...draft, practiceMode }))}
               onChangeUnlockedClasses={(unlockedClasses) => setImportDraft((draft) => ({ ...draft, unlockedClasses }))}
+              onChangeMaxAttempts={(maxAttempts) => setImportDraft((draft) => ({ ...draft, maxAttempts }))}
               onRemoveWord={removeDraftWord}
               onSave={saveImport}
             />
@@ -1277,7 +1340,8 @@ export function App() {
           {view === "results" && lastResult && (
             <ResultView
               result={lastResult}
-              practiceCount={sessions.length}
+              maxAttempts={selectedDeck?.maxAttempts}
+              practiceCount={(sessions || []).filter((s) => s.deck_id === selectedDeck?.id).length}
               onAgain={startStudy}
               onHome={() => setView(canManage ? "create-deck" : "deck")}
             />
@@ -1553,14 +1617,6 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
     return count;
   }, [filteredStudents, latestResultByStudent]);
 
-  const totalPracticeCount = useMemo(() => {
-    let total = 0;
-    for (const student of filteredStudents) {
-      total += practiceCountByStudent.get(student.id) || 0;
-    }
-    return total;
-  }, [filteredStudents, practiceCountByStudent]);
-
   async function readRoster(file) {
     if (!file) return;
     setError("");
@@ -1628,13 +1684,6 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
             <div>
               <strong>{filteredResultCount}</strong>
               <small>đã hoàn thành bài</small>
-            </div>
-          </div>
-          <div className="student-count practice-summary-card">
-            <span className="count-icon-wrap rotate-icon"><RotateCcw size={20} /></span>
-            <div>
-              <strong>{totalPracticeCount}</strong>
-              <small>lượt luyện từ vựng</small>
             </div>
           </div>
           {classList.length > 0 && (
@@ -2540,6 +2589,83 @@ function DeckLockSettings({
   );
 }
 
+function DeckMaxAttemptsSettings({ maxAttempts, onChange, disabled }) {
+  const [customValue, setCustomValue] = useState("");
+
+  const options = [
+    { value: null, title: "Không giới hạn", desc: "Sinh viên có thể luyện tự do nhiều lần" },
+    { value: 1, title: "1 lần duy nhất", desc: "Kiểm tra nghiêm ngặt (chỉ làm 1 lần)" },
+    { value: 2, title: "2 lần", desc: "Tối đa 2 lượt làm bài" },
+    { value: 3, title: "3 lần", desc: "Tối đa 3 lượt làm bài" },
+    { value: 5, title: "5 lần", desc: "Tối đa 5 lượt làm bài" },
+  ];
+
+  const currentVal = maxAttempts && Number(maxAttempts) > 0 ? Number(maxAttempts) : null;
+  const isCustom = currentVal !== null && !options.some((opt) => opt.value === currentVal);
+
+  return (
+    <div className="max-attempts-settings">
+      <div className="attempts-quick-grid">
+        {options.map((opt) => {
+          const isSelected = opt.value === currentVal;
+          return (
+            <button
+              key={String(opt.value)}
+              type="button"
+              className={`attempt-opt-card ${isSelected ? "active" : ""}`}
+              onClick={() => {
+                setCustomValue("");
+                onChange(opt.value);
+              }}
+              disabled={disabled}
+            >
+              <div className="opt-card-header">
+                <b>{opt.title}</b>
+                {isSelected && <Check size={16} />}
+              </div>
+              <small>{opt.desc}</small>
+            </button>
+          );
+        })}
+      </div>
+      <div className="custom-attempts-inline">
+        <label htmlFor="custom-attempt-input">Hoặc số lần khác:</label>
+        <div className="custom-input-group">
+          <input
+            id="custom-attempt-input"
+            type="number"
+            min="1"
+            max="100"
+            className="title-input custom-attempts-input"
+            placeholder="Nhập số lần (VD: 4, 10...)"
+            value={customValue || (isCustom ? String(currentVal) : "")}
+            onChange={(e) => setCustomValue(e.target.value)}
+            disabled={disabled}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                const n = parseInt(customValue, 10);
+                if (n > 0) onChange(n);
+              }
+            }}
+          />
+          <button
+            type="button"
+            className="secondary-button compact"
+            onClick={() => {
+              const n = parseInt(customValue, 10);
+              if (n > 0) onChange(n);
+            }}
+            disabled={disabled || !customValue || parseInt(customValue, 10) <= 0}
+          >
+            Lưu số lần
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function HomeView({
   deck,
   sessions = [],
@@ -2550,6 +2676,7 @@ function HomeView({
   isUpdatingMode,
   isUpdatingAccess,
   isUpdatingLockAt,
+  isUpdatingMaxAttempts,
   isDeletingDeck,
   importProgress,
   onPickPdf,
@@ -2557,6 +2684,7 @@ function HomeView({
   onModeChange,
   onClassAccessChange,
   onLockAtChange,
+  onMaxAttemptsChange,
   onDeleteDeck,
   onNavigateCreateDeck,
 }) {
@@ -2570,6 +2698,8 @@ function HomeView({
   const isLockedForMe = isDeckLockedForStudent(deck, account);
   const studentDeadline = getDeckLockAtForStudent(deck, account);
   const isExpired = Boolean(studentDeadline && Date.now() > new Date(studentDeadline).getTime());
+  const studentAttempts = (sessions || []).filter((s) => s.deck_id === deck.id).length;
+  const isAttemptsExhausted = isDeckAttemptsExhausted(deck, account, sessions);
 
   return (
     <div className="home-view">
@@ -2608,8 +2738,10 @@ function HomeView({
           <div className="overview-practice-stat">
             <span className="overview-icon practice-icon"><RotateCcw size={22} /></span>
             <div>
-              <strong>{(sessions || []).filter((s) => s.deck_id === deck.id).length} <small>lần</small></strong>
-              <span>số lần đã luyện</span>
+              <strong>
+                {studentAttempts}{deck.maxAttempts ? ` / ${deck.maxAttempts}` : ""} <small>lần</small>
+              </strong>
+              <span>{deck.maxAttempts ? "lượt làm bài đã dùng" : "số lần đã luyện"}</span>
             </div>
           </div>
         )}
@@ -2660,6 +2792,21 @@ function HomeView({
 
               <section className="assignment-panel">
                 <div className="section-title-row">
+                  <div>
+                    <span className="eyebrow">Số lần làm bài</span>
+                    <h2>Cài đặt số lần luyện cho bài kiểm tra</h2>
+                  </div>
+                  {isUpdatingMaxAttempts && <span className="points-rule"><LoaderCircle className="spin" size={15} /> Đang lưu…</span>}
+                </div>
+                <DeckMaxAttemptsSettings
+                  maxAttempts={deck.maxAttempts}
+                  onChange={onMaxAttemptsChange}
+                  disabled={isUpdatingMaxAttempts}
+                />
+              </section>
+
+              <section className="assignment-panel">
+                <div className="section-title-row">
                   <div><span className="eyebrow">Quyền học theo lớp</span><h2>Mở / Khóa bài tập cho từng lớp</h2></div>
                   {isUpdatingAccess && <span className="points-rule"><LoaderCircle className="spin" size={15} /> Đang lưu…</span>}
                 </div>
@@ -2696,8 +2843,27 @@ function HomeView({
             </p>
           </div>
         </div>
+      ) : isAttemptsExhausted ? (
+        <div className="deck-locked-container attempts-exhausted">
+          <div className="deck-locked-badge"><Lock size={28} /></div>
+          <div className="deck-locked-content">
+            <div className="eyebrow">Đã hoàn thành bài kiểm tra</div>
+            <h2>Bạn đã hết số lần làm bài cho phép ({studentAttempts}/{deck.maxAttempts} lần)</h2>
+            <p>
+              Giảng viên đã cài đặt giới hạn số lần làm bài cho bài kiểm tra này là {deck.maxAttempts} lần. Bạn đã hoàn thành bài thi và điểm số của bạn đã được ghi nhận vào hệ thống.
+            </p>
+          </div>
+        </div>
       ) : (
         <>
+          {deck.maxAttempts && (
+            <div className="attempts-notice-banner">
+              <RotateCcw size={16} />
+              <span>
+                Bài kiểm tra này giới hạn: <b>{deck.maxAttempts} lần</b> làm bài (Bạn đã làm <b>{studentAttempts}/{deck.maxAttempts}</b> lần, còn <b>{Math.max(0, deck.maxAttempts - studentAttempts)}</b> lượt).
+              </span>
+            </div>
+          )}
           {studentDeadline && (
             <div className="deadline-notice-banner">
               <Clock size={16} />
@@ -2721,7 +2887,7 @@ function HomeView({
   );
 }
 
-function ImportView({ draft, availableClasses = [], isSaving, connection, onBack, onChangeTitle, onChangePracticeMode, onChangeUnlockedClasses, onRemoveWord, onSave }) {
+function ImportView({ draft, availableClasses = [], isSaving, connection, onBack, onChangeTitle, onChangePracticeMode, onChangeUnlockedClasses, onChangeMaxAttempts, onRemoveWord, onSave }) {
   return (
     <div className="import-view">
       <button className="back-link" type="button" onClick={onBack}><ArrowLeft size={18} /> Quay lại</button>
@@ -2741,6 +2907,15 @@ function ImportView({ draft, availableClasses = [], isSaving, connection, onBack
             return <button key={mode.id} className={selected ? "active" : ""} type="button" aria-pressed={selected} onClick={() => onChangePracticeMode(mode.id)}><span><Icon size={19} /></span><span><b>{mode.title}</b></span>{selected && <Check size={17} />}</button>;
           })}
         </div>
+      </div>
+
+      <div className="import-attempts-section">
+        <div><span className="field-label">Số lần luyện / làm bài cho phép</span><p>Cài đặt số lần làm bài tối đa cho mỗi sinh viên ở bài kiểm tra này.</p></div>
+        <DeckMaxAttemptsSettings
+          maxAttempts={draft.maxAttempts}
+          onChange={onChangeMaxAttempts}
+          disabled={isSaving}
+        />
       </div>
 
       <ClassAccessControl
@@ -2920,10 +3095,11 @@ function StudyView({ study, currentWord, quizChoices, typingInputRef, isFullscre
   );
 }
 
-function ResultView({ result, practiceCount, onAgain, onHome }) {
+function ResultView({ result, practiceCount, maxAttempts, onAgain, onHome }) {
   const percentage = Math.round((result.correct / result.total) * 100);
   const violationText = formatViolationText(result);
   const hasViolation = Boolean(result.violationReason);
+  const isAttemptsExhausted = Boolean(maxAttempts && practiceCount >= maxAttempts);
 
   return (
     <div className="result-view">
@@ -2943,10 +3119,33 @@ function ResultView({ result, practiceCount, onAgain, onHome }) {
         <div><strong>{result.correct}/{result.total}</strong><span>câu đúng</span></div>
         <div><strong>{percentage}%</strong><span>độ chính xác</span></div>
         {typeof practiceCount === "number" && (
-          <div><strong>{practiceCount || 1}</strong><span>lần luyện</span></div>
+          <div>
+            <strong>
+              {practiceCount || 1}{maxAttempts ? ` / ${maxAttempts}` : ""}
+            </strong>
+            <span>{maxAttempts ? "lượt đã làm" : "lần luyện"}</span>
+          </div>
         )}
       </div>
-      <div className="result-actions"><button className="secondary-button" type="button" onClick={onHome}>Về bộ từ</button><button className="primary-button" type="button" onClick={onAgain}><RotateCcw size={18} /> Học lại</button></div>
+
+      {isAttemptsExhausted ? (
+        <div className="attempts-exhausted-result-banner">
+          <Lock size={18} />
+          <span>Bạn đã hoàn thành đủ số lần làm bài cho phép ({practiceCount}/{maxAttempts} lần). Kết quả thi đã được ghi nhận.</span>
+        </div>
+      ) : maxAttempts ? (
+        <div className="attempts-remaining-result-banner">
+          <RotateCcw size={16} />
+          <span>Bạn còn <b>{Math.max(0, maxAttempts - practiceCount)}</b> lượt làm lại bài kiểm tra này (Đã làm {practiceCount}/{maxAttempts} lần).</span>
+        </div>
+      ) : null}
+
+      <div className="result-actions">
+        <button className="secondary-button" type="button" onClick={onHome}>Về bộ từ</button>
+        {!isAttemptsExhausted && (
+          <button className="primary-button" type="button" onClick={onAgain}><RotateCcw size={18} /> Học lại</button>
+        )}
+      </div>
     </div>
   );
 }

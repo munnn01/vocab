@@ -25,6 +25,8 @@ import {
   formatViolationText,
   getViolationBadgeClass,
   getRosterDisplayLabel,
+  getDeckStudentAttempts,
+  isDeckAttemptsExhausted,
 } from "./App";
 
 test("App renders without crashing", () => {
@@ -183,5 +185,37 @@ test("getRosterDisplayLabel formats roster filename with class name", () => {
   const r5 = { id: "r5", originalFileName: "sinh_vien.xlsx", sheetName: "Sheet1", className: null };
   expect(getRosterDisplayLabel(r5, [])).toBe("sinh_vien.xlsx");
 });
+
+test("getDeckStudentAttempts and isDeckAttemptsExhausted correctly manage practice attempt limits", () => {
+  const deck1 = { id: "deck-1", title: "Bài 1", maxAttempts: 2 };
+  const deckUnlimited = { id: "deck-unlimited", title: "Tự do", maxAttempts: null };
+  const student = { role: "student", className: "12A1" };
+  const instructor = { role: "instructor" };
+
+  const sessions = [
+    { id: "s1", deck_id: "deck-1", score: 80 },
+    { id: "s2", deck_id: "deck-1", score: 90 },
+    { id: "s3", deck_id: "deck-2", score: 100 },
+  ];
+
+  // getDeckStudentAttempts
+  expect(getDeckStudentAttempts("deck-1", sessions)).toBe(2);
+  expect(getDeckStudentAttempts("deck-2", sessions)).toBe(1);
+  expect(getDeckStudentAttempts("deck-other", sessions)).toBe(0);
+  expect(getDeckStudentAttempts(null, sessions)).toBe(0);
+  expect(getDeckStudentAttempts("deck-1", null)).toBe(0);
+
+  // isDeckAttemptsExhausted for instructor (never locked)
+  expect(isDeckAttemptsExhausted(deck1, instructor, sessions)).toBe(false);
+
+  // Unlimited deck
+  expect(isDeckAttemptsExhausted(deckUnlimited, student, sessions)).toBe(false);
+
+  // Deck with 2 maxAttempts
+  expect(isDeckAttemptsExhausted(deck1, student, sessions)).toBe(true); // 2 sessions >= 2 maxAttempts
+  expect(isDeckAttemptsExhausted(deck1, student, [sessions[0]])).toBe(false); // 1 session < 2 maxAttempts
+  expect(isDeckAttemptsExhausted(deck1, student, [])).toBe(false); // 0 session < 2 maxAttempts
+});
+
 
 

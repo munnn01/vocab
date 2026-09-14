@@ -263,14 +263,20 @@ export async function loadLibrary() {
   const user = await requireUser();
   let deckRes = await supabase
     .from("decks")
-    .select("id,title,source_file_name,word_count,practice_mode,unlocked_classes,created_at,words(id,term,part_of_speech,meaning,position)")
+    .select("id,title,source_file_name,word_count,practice_mode,unlocked_classes,max_attempts,created_at,words(id,term,part_of_speech,meaning,position)")
     .order("created_at", { ascending: false });
 
-  if (deckRes.error && deckRes.error.message?.includes("unlocked_classes")) {
+  if (deckRes.error && (deckRes.error.message?.includes("max_attempts") || deckRes.error.message?.includes("unlocked_classes"))) {
     deckRes = await supabase
       .from("decks")
-      .select("id,title,source_file_name,word_count,practice_mode,created_at,words(id,term,part_of_speech,meaning,position)")
+      .select("id,title,source_file_name,word_count,practice_mode,unlocked_classes,created_at,words(id,term,part_of_speech,meaning,position)")
       .order("created_at", { ascending: false });
+    if (deckRes.error && deckRes.error.message?.includes("unlocked_classes")) {
+      deckRes = await supabase
+        .from("decks")
+        .select("id,title,source_file_name,word_count,practice_mode,created_at,words(id,term,part_of_speech,meaning,position)")
+        .order("created_at", { ascending: false });
+    }
   }
 
   const sessionRes = await supabase
@@ -291,6 +297,13 @@ export async function loadLibrary() {
       wordCount: deck.word_count,
       practiceMode: deck.practice_mode || "typing",
       unlockedClasses: Array.isArray(deck.unlocked_classes) ? deck.unlocked_classes : null,
+      maxAttempts: deck.max_attempts ?? (() => {
+        if (typeof localStorage !== "undefined") {
+          const raw = localStorage.getItem(`vocab_deck_max_attempts_${deck.id}`);
+          if (raw) return Number(raw);
+        }
+        return null;
+      })(),
       lockAt: deck.lock_at || (typeof localStorage !== "undefined" ? localStorage.getItem(`vocab_deck_lock_${deck.id}`) : null) || null,
       lockAtByClass: (() => {
         if (typeof localStorage !== "undefined") {
@@ -311,7 +324,7 @@ export async function loadLibrary() {
   };
 }
 
-export async function createDeck({ title, sourceFileName, practiceMode, words, unlockedClasses = null }) {
+export async function createDeck({ title, sourceFileName, practiceMode, words, unlockedClasses = null, maxAttempts = null }) {
   const user = await requireUser();
   const payload = {
     owner_id: user.id,
@@ -323,12 +336,24 @@ export async function createDeck({ title, sourceFileName, practiceMode, words, u
   if (Array.isArray(unlockedClasses)) {
     payload.unlocked_classes = unlockedClasses;
   }
+  if (maxAttempts && Number(maxAttempts) > 0) {
+    payload.max_attempts = Number(maxAttempts);
+  }
 
   let deckRes = await supabase
     .from("decks")
     .insert(payload)
-    .select("id,title,source_file_name,word_count,practice_mode,unlocked_classes,created_at")
+    .select("id,title,source_file_name,word_count,practice_mode,unlocked_classes,max_attempts,created_at")
     .single();
+
+  if (deckRes.error && deckRes.error.message?.includes("max_attempts")) {
+    delete payload.max_attempts;
+    deckRes = await supabase
+      .from("decks")
+      .insert(payload)
+      .select("id,title,source_file_name,word_count,practice_mode,unlocked_classes,created_at")
+      .single();
+  }
 
   if (deckRes.error && deckRes.error.message?.includes("unlocked_classes")) {
     delete payload.unlocked_classes;
@@ -341,6 +366,10 @@ export async function createDeck({ title, sourceFileName, practiceMode, words, u
 
   if (deckRes.error) throw deckRes.error;
   const deck = deckRes.data;
+
+  if (maxAttempts && typeof localStorage !== "undefined") {
+    localStorage.setItem(`vocab_deck_max_attempts_${deck.id}`, String(maxAttempts));
+  }
 
   const rows = words.map((word, position) => ({
     deck_id: deck.id,
@@ -395,6 +424,32 @@ export async function updateDeckClassAccess(deckId, unlockedClasses) {
       throw new Error("Cơ sở dữ liệu Supabase chưa có cột unlocked_classes. Vui lòng chạy file migration trong SQL Editor.");
     }
     throw error;
+  }
+}
+
+export async function updateDeckMaxAttempts(deckId, maxAttempts) {
+  const value = maxAttempts && Number(maxAttempts) > 0 ? Number(maxAttempts) : null;
+  if (typeof localStorage !== "undefined") {
+    if (value) {
+      localStorage.setItem(`vocab_deck_max_attempts_${deckId}`, String(value));
+    } else {
+      localStorage.removeItem(`vocab_deck_max_attempts_${deckId}`);
+    }
+  }
+  if (!supabase) return;
+  try {
+    await requireUser();
+    const { error } = await supabase
+      .from("decks")
+      .update({ max_attempts: value })
+      .eq("id", deckId);
+    if (error && error.message?.includes("max_attempts")) {
+      console.warn("Column max_attempts not yet in decks table. Saved to localStorage.");
+      return;
+    }
+    if (error) throw error;
+  } catch (err) {
+    console.warn("Could not sync max_attempts with Supabase:", err);
   }
 }
 
