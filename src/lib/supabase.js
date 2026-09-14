@@ -283,6 +283,15 @@ export async function updateDeckPracticeMode(deckId, practiceMode) {
   if (error) throw error;
 }
 
+export async function deleteDeck(deckId) {
+  await requireUser();
+  const { error } = await supabase
+    .from("decks")
+    .delete()
+    .eq("id", deckId);
+  if (error) throw error;
+}
+
 export async function saveStudySession({ deckId, mode, score, correct, total, completed, violationReason = null }) {
   if (!supabase || deckId === "demo") return;
   const user = await requireUser();

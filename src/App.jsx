@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { DEMO_WORDS, POS_LABELS, makeQuizChoices, normalizeAnswer, shuffle } from "./lib/vocabulary";
 import {
-  createDeck, createStudentAccounts, getCurrentAccount, isSupabaseConfigured,
+  createDeck, createStudentAccounts, deleteDeck, getCurrentAccount, isSupabaseConfigured,
   loadLibrary, loadRosterWorkbook, loadRosters, loadStudentResults, loadStudents,
   saveStudySession, signIn, signOut,
   updateDeckPracticeMode,
@@ -76,6 +76,8 @@ export function App() {
   const [study, setStudy] = useState(null);
   const [lastResult, setLastResult] = useState(null);
   const [leaveDialog, setLeaveDialog] = useState(false);
+  const [deckToDelete, setDeckToDelete] = useState(null);
+  const [isDeletingDeck, setIsDeletingDeck] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(Boolean(document.fullscreenElement));
   const [toast, setToast] = useState("");
 
@@ -447,6 +449,32 @@ export function App() {
     }
   }
 
+  async function confirmDeleteDeck() {
+    if (!deckToDelete || deckToDelete.isDemo) return;
+    setIsDeletingDeck(true);
+    try {
+      if (isSupabaseConfigured && !deckToDelete.isTemporary && connection === "connected") {
+        await deleteDeck(deckToDelete.id);
+      }
+      const remainingDecks = decks.filter((d) => d.id !== deckToDelete.id);
+      setDecks(remainingDecks);
+      if (selectedDeckId === deckToDelete.id) {
+        setSelectedDeckId(remainingDecks[0]?.id || "demo");
+      }
+      if (view === "study" && study?.deckId === deckToDelete.id) {
+        setStudy(null);
+        setView("home");
+      }
+      showToast(`Đã xóa bộ từ "${deckToDelete.title}".`);
+      setDeckToDelete(null);
+    } catch (error) {
+      console.error("Không thể xóa bộ từ", error);
+      showToast(error.message || "Chưa xóa được bộ từ. Vui lòng thử lại.");
+    } finally {
+      setIsDeletingDeck(false);
+    }
+  }
+
   async function handleLogin(credentials) {
     const loggedInAccount = await signIn(credentials);
     setAccount(loggedInAccount);
@@ -630,13 +658,29 @@ export function App() {
           </div>
           <div className="deck-list">
             {decks.map((deck, index) => (
-              <button key={deck.id} className={`deck-row ${selectedDeckId === deck.id ? "active" : ""}`} type="button" onClick={() => {
-                if (view === "study") setLeaveDialog(true);
-                else { setSelectedDeckId(deck.id); setView("home"); }
-              }}>
-                <span className={`deck-icon ${index % 2 ? "blue" : "coral"}`}>{deck.isDemo ? <Sparkles size={18} /> : <BookOpen size={18} />}</span>
-                <span><b>{deck.title}</b><small>{deckMeta(deck)}</small></span>
-              </button>
+              <div key={deck.id} className="deck-item-wrap">
+                <button className={`deck-row ${selectedDeckId === deck.id ? "active" : ""}`} type="button" onClick={() => {
+                  if (view === "study") setLeaveDialog(true);
+                  else { setSelectedDeckId(deck.id); setView("home"); }
+                }}>
+                  <span className={`deck-icon ${index % 2 ? "blue" : "coral"}`}>{deck.isDemo ? <Sparkles size={18} /> : <BookOpen size={18} />}</span>
+                  <span><b>{deck.title}</b><small>{deckMeta(deck)}</small></span>
+                </button>
+                {canManage && !deck.isDemo && (
+                  <button
+                    className="deck-delete-btn"
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDeckToDelete(deck);
+                    }}
+                    title={`Xóa bộ từ "${deck.title}"`}
+                    aria-label={`Xóa bộ từ "${deck.title}"`}
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                )}
+              </div>
             ))}
           </div>
           {canManage && <><button className="upload-mini" type="button" onClick={() => fileInputRef.current?.click()}><FileUp size={18} /> Nhập PDF mới</button>
@@ -644,7 +688,7 @@ export function App() {
         </aside>
 
         <section className="content-stage">
-          {view === "home" && <HomeView deck={selectedDeck} canManage={canManage} isImporting={isImporting} isUpdatingMode={isUpdatingMode} importProgress={importProgress} onPickPdf={() => fileInputRef.current?.click()} onStart={startStudy} onModeChange={handleDeckPracticeMode} />}
+          {view === "home" && <HomeView deck={selectedDeck} canManage={canManage} isImporting={isImporting} isUpdatingMode={isUpdatingMode} isDeletingDeck={isDeletingDeck} importProgress={importProgress} onPickPdf={() => fileInputRef.current?.click()} onStart={startStudy} onModeChange={handleDeckPracticeMode} onDeleteDeck={(deck) => setDeckToDelete(deck)} />}
           {view === "students" && canManage && <InstructorView students={students} rosters={rosters} studentResults={studentResults} generatedAccounts={generatedAccounts} isGenerating={isGeneratingAccounts} isRefreshingResults={isRefreshingResults} isExportingResults={isExportingResults} isDemo={Boolean(account.demo)} onGenerate={handleGenerateStudents} onExport={handleExportStudents} onExportResults={handleExportRosterResults} onRefreshResults={handleRefreshStudentResults} />}
           {view === "import" && importDraft && <ImportView draft={importDraft} isSaving={isSaving} connection={connection} onBack={() => setView("home")} onChangeTitle={(title) => setImportDraft((draft) => ({ ...draft, title }))} onChangePracticeMode={(practiceMode) => setImportDraft((draft) => ({ ...draft, practiceMode }))} onRemoveWord={removeDraftWord} onSave={saveImport} />}
           {view === "study" && study && currentWord && <StudyView study={study} currentWord={currentWord} quizChoices={quizChoices} typingInputRef={typingInputRef} isFullscreen={isFullscreen} onBack={() => setLeaveDialog(true)} onFullscreen={toggleFullscreen} onAnswer={answerCurrent} onInput={(input) => setStudy((current) => ({ ...current, input }))} onTypingSubmit={submitTyping} />}
@@ -662,6 +706,24 @@ export function App() {
             <div className="dialog-actions">
               <button className="secondary-button" type="button" onClick={() => setLeaveDialog(false)}>Học tiếp</button>
               <button className="danger-button" type="button" onClick={confirmLeaveStudy}>Rời và trừ điểm</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deckToDelete && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => !isDeletingDeck && setDeckToDelete(null)}>
+          <div className="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-deck-title" onMouseDown={(event) => event.stopPropagation()}>
+            <button className="dialog-close" type="button" onClick={() => !isDeletingDeck && setDeckToDelete(null)} aria-label="Đóng" disabled={isDeletingDeck}><X size={18} /></button>
+            <div className="warning-icon"><Trash2 size={25} /></div>
+            <h2 id="delete-deck-title">Xóa bộ từ?</h2>
+            <p>Bạn có chắc chắn muốn xóa bộ từ <strong>"{deckToDelete.title}"</strong> ({deckToDelete.words?.length || 0} từ)? Tất cả từ vựng và kết quả làm bài của sinh viên trong bộ từ này sẽ bị xóa vĩnh viễn.</p>
+            <div className="dialog-actions">
+              <button className="secondary-button" type="button" onClick={() => setDeckToDelete(null)} disabled={isDeletingDeck}>Hủy</button>
+              <button className="danger-button" type="button" onClick={confirmDeleteDeck} disabled={isDeletingDeck}>
+                {isDeletingDeck ? <LoaderCircle className="spin" size={17} /> : <Trash2 size={17} />}
+                {isDeletingDeck ? "Đang xóa…" : "Xóa bộ từ"}
+              </button>
             </div>
           </div>
         </div>
@@ -843,7 +905,7 @@ function InstructorView({ students, rosters, studentResults, generatedAccounts, 
   );
 }
 
-function HomeView({ deck, canManage, isImporting, isUpdatingMode, importProgress, onPickPdf, onStart, onModeChange }) {
+function HomeView({ deck, canManage, isImporting, isUpdatingMode, isDeletingDeck, importProgress, onPickPdf, onStart, onModeChange, onDeleteDeck }) {
   const posCounts = useMemo(() => {
     const counts = {};
     for (const word of deck.words) counts[word.partOfSpeech] = (counts[word.partOfSpeech] || 0) + 1;
@@ -857,10 +919,18 @@ function HomeView({ deck, canManage, isImporting, isUpdatingMode, importProgress
       <div className="mobile-deck-label">Bộ từ đang chọn</div>
       <div className="home-head">
         <div><div className="eyebrow">{canManage ? "Thiết lập bài tập" : "Bài giảng viên đã giao"}</div><h1>{deck.title}</h1><p>{deck.sourceFileName || "Bộ từ vựng của lớp"}</p></div>
-        {canManage && <button className="primary-button compact" type="button" onClick={onPickPdf} disabled={isImporting}>
-          {isImporting ? <LoaderCircle className="spin" size={18} /> : <FileUp size={18} />}
-          {isImporting ? `Đang đọc ${importProgress}%` : "Nhập PDF"}
-        </button>}
+        <div className="home-head-actions">
+          {canManage && !deck.isDemo && (
+            <button className="danger-button compact delete-deck-action" type="button" onClick={() => onDeleteDeck(deck)} disabled={isDeletingDeck} title="Xóa bộ từ này">
+              {isDeletingDeck ? <LoaderCircle className="spin" size={17} /> : <Trash2 size={17} />}
+              <span>Xóa bộ từ</span>
+            </button>
+          )}
+          {canManage && <button className="primary-button compact" type="button" onClick={onPickPdf} disabled={isImporting}>
+            {isImporting ? <LoaderCircle className="spin" size={18} /> : <FileUp size={18} />}
+            {isImporting ? `Đang đọc ${importProgress}%` : "Nhập PDF"}
+          </button>}
+        </div>
       </div>
 
       <div className="deck-overview">
