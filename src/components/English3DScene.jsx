@@ -1,1 +1,1 @@
-﻿export { DriftingCloudsBackground, DriftingCloudsBackground as English3DScene } from "./DriftingCloudsBackground";
+﻿export { BookBackground as English3DScene } from "./BookBackground";

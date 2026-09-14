@@ -16,7 +16,7 @@ import {
   createDemoStudentAccounts, downloadRosterCredentialsXlsx, downloadRosterResultsXlsx,
   parseStudentRosterXlsx,
 } from "./lib/studentAccounts";
-import { DriftingCloudsBackground } from "./components/DriftingCloudsBackground";
+import { BookBackground } from "./components/BookBackground";
 
 const DEMO_DECK = {
   id: "demo",
@@ -1030,6 +1030,7 @@ function LoginView({ onLogin }) {
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [isMinimized, setIsMinimized] = useState(false);
 
   async function submit(event) {
     event.preventDefault();
@@ -1046,17 +1047,40 @@ function LoginView({ onLogin }) {
 
   return (
     <div className="auth-screen centered-auth">
-      <DriftingCloudsBackground />
+      <BookBackground />
 
-      <div className="login-centered-container">
-        <form className="login-card centered-card" onSubmit={submit}>
-          <div className="login-card-brand">
-            <span className="brand-mark"><Layers3 size={24} /></span>
-            <div className="brand-title">
-              <h1>Từ Vựng <b>Mỗi Ngày</b></h1>
-              <span>Cổng học tập & quản lý từ vựng</span>
+      {isMinimized ? (
+        <button
+          className="login-minimized-badge"
+          type="button"
+          onClick={() => setIsMinimized(false)}
+          title="Mở cổng đăng nhập"
+        >
+          <Layers3 size={18} />
+          <span>Mở cổng đăng nhập</span>
+        </button>
+      ) : (
+        <div className="login-centered-container">
+          <form className="login-card centered-card" onSubmit={submit}>
+            <div className="login-card-top-bar">
+              <span className="eyebrow" style={{ color: "#8b6e53", fontSize: "0.72rem" }}>Cổng học tập</span>
+              <button
+                type="button"
+                className="toggle-book-view-btn"
+                onClick={() => setIsMinimized(true)}
+                title="Thu gọn để xem toàn bộ cuốn sách 3D"
+              >
+                <span>📖 Xem sách 3D</span>
+              </button>
             </div>
-          </div>
+
+            <div className="login-card-brand">
+              <span className="brand-mark"><Layers3 size={24} /></span>
+              <div className="brand-title">
+                <h1>Từ Vựng <b>Mỗi Ngày</b></h1>
+                <span>Cổng học tập & quản lý từ vựng</span>
+              </div>
+            </div>
 
           <div className="role-switch" role="tablist" aria-label="Vai trò đăng nhập">
             <button
@@ -1140,6 +1164,7 @@ function LoginView({ onLogin }) {
           </p>
         </form>
       </div>
+      )}
     </div>
   );
 }
