@@ -98,6 +98,54 @@ export function App() {
     toastTimerRef.current = window.setTimeout(() => setToast(""), 3400);
   }, []);
 
+  const finishStudy = useCallback((finalStudy, completed = true, violationReason = null) => {
+    suppressFullscreenPenaltyRef.current = true;
+    fullscreenSeenRef.current = false;
+    if (typeof document !== "undefined" && document.fullscreenElement) {
+      void document.exitFullscreen().finally(() => { suppressFullscreenPenaltyRef.current = false; });
+    } else {
+      suppressFullscreenPenaltyRef.current = false;
+    }
+    const result = {
+      deckTitle: finalStudy.deckTitle,
+      mode: finalStudy.mode,
+      score: finalStudy.score,
+      correct: finalStudy.correct,
+      total: finalStudy.items.length,
+      completed,
+      violationReason,
+    };
+    setLastResult(result);
+    if (completed) setView("results");
+    setStudy(null);
+
+    saveStudySession({
+      deckId: finalStudy.deckId,
+      mode: finalStudy.mode,
+      score: finalStudy.score,
+      correct: finalStudy.correct,
+      total: finalStudy.items.length,
+      completed,
+      violationReason,
+    }).then(() => {
+      if (finalStudy.deckId !== "demo") {
+        setSessions((current) => [{
+          id: crypto.randomUUID(),
+          deck_id: finalStudy.deckId,
+          score: finalStudy.score,
+          correct_count: finalStudy.correct,
+          total_count: finalStudy.items.length,
+          completed,
+          violation_reason: violationReason,
+          created_at: new Date().toISOString(),
+        }, ...current]);
+      }
+    }).catch((error) => {
+      console.error("Không thể lưu phiên học", error);
+      showToast("Lỗi khi lưu kết quả lên máy chủ: " + (error.message || error));
+    });
+  }, [showToast]);
+
   useEffect(() => () => {
     window.clearTimeout(toastTimerRef.current);
     window.clearTimeout(answerTimerRef.current);
@@ -246,53 +294,6 @@ export function App() {
     return () => lifecycle.abort();
   }, [account?.role, selectedDeck, startStudy]);
 
-  const finishStudy = useCallback((finalStudy, completed = true, violationReason = null) => {
-    suppressFullscreenPenaltyRef.current = true;
-    fullscreenSeenRef.current = false;
-    if (document.fullscreenElement) {
-      void document.exitFullscreen().finally(() => { suppressFullscreenPenaltyRef.current = false; });
-    } else {
-      suppressFullscreenPenaltyRef.current = false;
-    }
-    const result = {
-      deckTitle: finalStudy.deckTitle,
-      mode: finalStudy.mode,
-      score: finalStudy.score,
-      correct: finalStudy.correct,
-      total: finalStudy.items.length,
-      completed,
-      violationReason,
-    };
-    setLastResult(result);
-    if (completed) setView("results");
-    setStudy(null);
-
-    saveStudySession({
-      deckId: finalStudy.deckId,
-      mode: finalStudy.mode,
-      score: finalStudy.score,
-      correct: finalStudy.correct,
-      total: finalStudy.items.length,
-      completed,
-      violationReason,
-    }).then(() => {
-      if (finalStudy.deckId !== "demo") {
-        setSessions((current) => [{
-          id: crypto.randomUUID(),
-          deck_id: finalStudy.deckId,
-          score: finalStudy.score,
-          correct_count: finalStudy.correct,
-          total_count: finalStudy.items.length,
-          completed,
-          violation_reason: violationReason,
-          created_at: new Date().toISOString(),
-        }, ...current]);
-      }
-    }).catch((error) => {
-      console.error("Không thể lưu phiên học", error);
-      showToast("Lỗi khi lưu kết quả lên máy chủ: " + (error.message || error));
-    });
-  }, [showToast]);
 
   useEffect(() => {
     if (view !== "study" || !study || account?.role !== "student") return undefined;
