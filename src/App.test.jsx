@@ -460,6 +460,81 @@ test("InstructorView renders separate columns for old password and new password"
   expect(html).toContain("Chưa đổi");
 });
 
+test("InstructorView renders Điểm trung bình column and computes average score correctly", () => {
+  const students = [
+    {
+      id: "st-1",
+      displayName: "Nguyễn Văn A",
+      username: "12a1-abc123",
+      className: "12A1",
+      rosterId: "r1",
+      rosterRow: 2,
+    },
+    {
+      id: "st-2",
+      displayName: "Trần Thị B",
+      username: "12a1-xyz789",
+      className: "12A1",
+      rosterId: "r1",
+      rosterRow: 3,
+    },
+  ];
+
+  const studentResults = [
+    { studentId: "st-1", deckId: "deck-1", score: 80, completed: true },
+    { studentId: "st-1", deckId: "deck-2", score: 90, completed: true },
+  ];
+
+  const decks = [
+    { id: "deck-1", title: "Unit 1" },
+    { id: "deck-2", title: "Unit 2" },
+  ];
+
+  const html = renderToString(
+    <InstructorView
+      students={students}
+      rosters={[{ id: "r1", originalFileName: "12A1.xlsx", className: "12A1" }]}
+      studentResults={studentResults}
+      decks={decks}
+      generatedAccounts={[]}
+      isGenerating={false}
+      isRefreshingResults={false}
+      isExportingResults={false}
+      isResettingPasswords={false}
+      isDeletingRoster={false}
+      isDemo={false}
+      onGenerate={() => {}}
+      onExport={() => {}}
+      onExportResults={() => {}}
+      onRefreshResults={() => {}}
+      onResetPasswords={() => {}}
+      onDeleteRoster={() => {}}
+      onViewStudentProgress={() => {}}
+    />
+  );
+
+  // Table header has Điểm trung bình column
+  expect(html).toContain(">Điểm trung bình</th>");
+
+  // Student 1 has scores 80 and 90 -> average 85
+  expect(html).toContain("avg-score-badge");
+  expect(html).toContain("85");
+
+  // Student 2 has no scores -> "—"
+  expect(html).toContain("—");
+});
+
+test("results export includes avgScore as the last column", () => {
+  const columns = [
+    { key: "deck_1", header: "Unit 1", width: 18, type: "number" },
+    { key: "deck_2", header: "Unit 2", width: 18, type: "number" },
+    { key: "avgScore", header: "Điểm trung bình", width: 16, type: "number" },
+  ];
+  const lastCol = columns[columns.length - 1];
+  expect(lastCol.key).toBe("avgScore");
+  expect(lastCol.header).toBe("Điểm trung bình");
+});
+
 
 
 

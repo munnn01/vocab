@@ -1296,6 +1296,7 @@ kbd { margin-left: 6px; padding: 3px 6px; border: 1px solid rgba(255,255,255,.14
 .practice-count-badge { gap: 5px; color: #00695c; background: rgba(0, 105, 92, 0.09); border: 1px solid rgba(0, 105, 92, 0.22); }
 .score-badge { color: #ffffff; background: #2e7d32; box-shadow: 0 2px 8px rgba(46, 125, 50, 0.25); }
 .score-badge.left-early { color: #c0392b; background: rgba(192, 57, 43, 0.1); border: 1px solid rgba(192, 57, 43, 0.3); box-shadow: none; }
+.score-badge.avg-score-badge { color: #78350f; background: rgba(245, 158, 11, 0.14); border: 1px solid rgba(245, 158, 11, 0.35); box-shadow: 0 2px 6px rgba(245, 158, 11, 0.1); font-weight: 850; }
 .issue-badge {
   display: inline-flex;
   min-height: 28px;

@@ -1173,9 +1173,10 @@ export function App() {
         type: "number",
       }));
 
-      // Khi in ra file điểm chỉ có tên, lớp, và điểm các chương
-      const exportColumns = deckColumns.length > 0 ? [...deckColumns] : [
-        { key: "score", header: "Điểm", width: 12, type: "number" },
+      // Khi in ra file điểm chỉ có tên, lớp, điểm các chương và cột cuối là điểm trung bình
+      const exportColumns = [
+        ...(deckColumns.length > 0 ? deckColumns : [{ key: "score", header: "Điểm", width: 12, type: "number" }]),
+        { key: "avgScore", header: "Điểm trung bình", width: 16, type: "number" },
       ];
 
       const resultRows = students
@@ -1185,12 +1186,24 @@ export function App() {
             rowNumber: student.rosterRow,
           };
 
+          const scores = [];
           // Ở dưới là số điểm của từng học sinh tương ứng với mỗi bài
           for (const deck of sortedDecks) {
             const deckRes = studentDeckResults.get(`${student.id}_${deck.id}`);
-            rowData[`deck_${deck.id}`] = (deckRes && typeof deckRes.score === "number")
-              ? deckRes.score
-              : "";
+            if (deckRes && typeof deckRes.score === "number") {
+              rowData[`deck_${deck.id}`] = deckRes.score;
+              scores.push(deckRes.score);
+            } else {
+              rowData[`deck_${deck.id}`] = "";
+            }
+          }
+
+          // Cột cuối là điểm trung bình
+          if (scores.length > 0) {
+            const avg = Math.round((scores.reduce((sum, val) => sum + val, 0) / scores.length) * 10) / 10;
+            rowData.avgScore = avg;
+          } else {
+            rowData.avgScore = "";
           }
 
           return rowData;
@@ -1198,7 +1211,7 @@ export function App() {
 
       if (!resultRows.length) throw new Error("Không tìm thấy học sinh thuộc danh sách này.");
       downloadRosterResultsXlsx(workbook, resultRows, exportColumns);
-      showToast("Đã xuất file bảng điểm (Họ và tên, Lớp, Điểm các chương).");
+      showToast("Đã xuất file bảng điểm (Họ và tên, Lớp, Điểm các chương và Điểm trung bình).");
     } catch (error) {
       console.error("Không thể xuất kết quả vào file gốc", error);
       showToast(error.message || "Chưa xuất được file kết quả.");
@@ -2128,7 +2141,7 @@ export function InstructorView({ students, rosters, studentResults, decks = [], 
                   onExportResults(selectedRosterId);
                 }}
                 disabled={!selectedRosterId || isExportingResults}
-                title={!selectedRosterId ? "Vui lòng chọn file trong ô 'Danh sách'" : "Xuất file điểm chỉ gồm họ tên, lớp và điểm các chương"}
+                title={!selectedRosterId ? "Vui lòng chọn file trong ô 'Danh sách'" : "Xuất file bảng điểm gồm họ tên, lớp, điểm các chương và điểm trung bình"}
               >
                 {isExportingResults ? <LoaderCircle className="spin" size={17} /> : <Download size={17} />}
                 <span>{isExportingResults ? "Đang xuất…" : "Xuất file điểm"}</span>
@@ -2239,6 +2252,7 @@ export function InstructorView({ students, rosters, studentResults, decks = [], 
                         {deck.title}
                       </th>
                     ))}
+                    <th title="Điểm trung bình của các bài đã làm">Điểm trung bình</th>
                     <th>Số lần luyện</th>
                     <th>Lỗi/vi phạm</th>
                     <th>Lần thi gần nhất</th>
@@ -2255,6 +2269,18 @@ export function InstructorView({ students, rosters, studentResults, decks = [], 
                     const currentPassword = student.currentPassword;
                     const hasChanged = Boolean(student.hasChangedPassword && currentPassword);
                     const isSelected = selectedStudentId === student.id;
+
+                    const studentScores = [];
+                    for (const deck of sortedDecks) {
+                      const deckRes = studentDeckResults.get(`${student.id}_${deck.id}`);
+                      if (deckRes && typeof deckRes.score === "number") {
+                        studentScores.push(deckRes.score);
+                      }
+                    }
+                    const avgScore = studentScores.length > 0
+                      ? Math.round((studentScores.reduce((sum, val) => sum + val, 0) / studentScores.length) * 10) / 10
+                      : null;
+
                     return (
                       <tr
                         key={student.id}
@@ -2299,6 +2325,15 @@ export function InstructorView({ students, rosters, studentResults, decks = [], 
                           </td>
                         );
                       })}
+                      <td>
+                        {avgScore !== null ? (
+                          <span className="score-badge avg-score-badge" title={`Điểm trung bình của ${studentScores.length} bài đã làm`}>
+                            {avgScore} điểm
+                          </span>
+                        ) : (
+                          <span className="no-result">—</span>
+                        )}
+                      </td>
                       <td>
                         {practiceCount > 0 ? (
                           <span className="practice-count-badge">
