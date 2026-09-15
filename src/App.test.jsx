@@ -28,10 +28,13 @@ import {
   getDeckStudentAttempts,
   isDeckAttemptsExhausted,
   InstructorView,
+  PRACTICE_MODES,
+  StudyView,
 } from "./App";
 import { MostMissedWordsModal } from "./components/MostMissedWordsModal";
 import { DeckShuffleSettings } from "./components/StudyFeatures";
-import { makeQuizChoices } from "./lib/vocabulary";
+import { makeQuizChoices, POS_LABELS } from "./lib/vocabulary";
+import { makeWordFamilyChoices } from "./lib/wordFamilies";
 
 test("App renders without crashing", () => {
   const html = renderToString(<App />);
@@ -633,6 +636,78 @@ test("speakWord safely accepts rate options without crashing", () => {
   expect(() => speakWord("hello", { rate: 0.72 })).not.toThrow();
   expect(() => speakWord("world", { rate: 1.0 })).not.toThrow();
 });
+
+test("PRACTICE_MODES includes listening_pos mode with emerald accent and valid config", () => {
+  const mode = PRACTICE_MODES.find((m) => m.id === "listening_pos");
+  expect(mode).toBeDefined();
+  expect(mode.title).toBe("Nghe & Chọn từ loại");
+  expect(mode.accent).toBe("emerald");
+  expect(mode.icon).toBeDefined();
+});
+
+test("makeWordFamilyChoices returns 4 parts of speech with exactly 1 correct answer", () => {
+  const currentWord = { id: "w1", term: "creative", partOfSpeech: "adj", meaning: "sáng tạo" };
+  const choices = makeWordFamilyChoices(currentWord, [currentWord]);
+  expect(choices).toHaveLength(4);
+  const correctChoices = choices.filter((c) => c.isCorrect);
+  expect(correctChoices).toHaveLength(1);
+  expect(correctChoices[0].term).toBe("creative");
+  expect(correctChoices[0].partOfSpeech).toBe("adj");
+
+  const posSet = new Set(choices.map((c) => c.partOfSpeech));
+  expect(posSet.has("n")).toBe(true);
+  expect(posSet.has("v")).toBe(true);
+  expect(posSet.has("adj")).toBe(true);
+  expect(posSet.has("adv")).toBe(true);
+});
+
+test("StudyView correctly renders listening_pos interface with replay limit badge and options", () => {
+  const currentWord = { id: "w1", term: "creative", partOfSpeech: "adj", meaning: "sáng tạo" };
+  const study = {
+    deckId: "demo",
+    deckTitle: "Bộ từ mẫu",
+    items: [currentWord],
+    index: 0,
+    mode: "listening_pos",
+    score: 0,
+    correct: 0,
+    answered: 0,
+    feedback: null,
+    feedbackMessage: "",
+    disabledChoices: [],
+    wordMistakes: 0,
+    isExamMode: false,
+    timeLimitSeconds: null,
+  };
+  const wordFamilyChoices = makeWordFamilyChoices(currentWord, [currentWord]);
+
+  const html = renderToString(
+    <StudyView
+      study={study}
+      currentWord={currentWord}
+      quizChoices={[]}
+      wordFamilyChoices={wordFamilyChoices}
+      typingInputRef={{ current: null }}
+      isFullscreen={false}
+      onBack={() => {}}
+      onFullscreen={() => {}}
+      onAnswer={() => {}}
+      onInput={() => {}}
+      onTypingSubmit={() => {}}
+      onTimeUp={() => {}}
+    />
+  );
+
+  expect(html).toContain("Nghe &amp; Chọn từ loại");
+  expect(html).toContain("Họ từ &amp; Biến thể");
+  expect(html).toContain("Nghe &amp; Chọn đúng dạng từ loại");
+  expect(html).toContain("Còn 2 lượt nghe lại");
+  expect(html).toContain("Nghe lại phát âm");
+  expect(html).toContain("Nghe chậm (0.75x)");
+  expect(html).toContain("creative");
+  expect(html).toContain("family-choice-btn");
+});
+
 
 
 

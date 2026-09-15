@@ -357,7 +357,13 @@ export async function loadLibrary() {
       title: deck.title,
       sourceFileName: deck.source_file_name,
       wordCount: deck.word_count,
-      practiceMode: deck.practice_mode || "typing",
+      practiceMode: (() => {
+        if (typeof localStorage !== "undefined") {
+          const override = localStorage.getItem(`vocab_deck_practice_mode_${deck.id}`);
+          if (override) return override;
+        }
+        return deck.practice_mode || "typing";
+      })(),
       unlockedClasses: Array.isArray(deck.unlocked_classes) ? deck.unlocked_classes : null,
       maxAttempts: deck.max_attempts ?? (() => {
         if (typeof localStorage !== "undefined") {
@@ -487,12 +493,21 @@ export async function createDeck({ title, sourceFileName, practiceMode, words, u
 
 export async function updateDeckPracticeMode(deckId, practiceMode) {
   await requireUser();
-  if (!["typing", "quiz", "listening"].includes(practiceMode)) throw new Error("Thể loại làm bài không hợp lệ.");
+  if (!["typing", "quiz", "listening", "listening_pos"].includes(practiceMode)) throw new Error("Thể loại làm bài không hợp lệ.");
+  if (typeof localStorage !== "undefined") {
+    localStorage.setItem(`vocab_deck_practice_mode_${deckId}`, practiceMode);
+  }
   const { error } = await supabase
     .from("decks")
     .update({ practice_mode: practiceMode })
     .eq("id", deckId);
-  if (error) throw error;
+  if (error) {
+    if (error.message?.includes("practice_mode")) {
+      console.warn("Supabase decks.practice_mode constraint not yet updated. Stored locally.");
+      return;
+    }
+    throw error;
+  }
 }
 
 export async function updateDeckShuffle(deckId, shuffleQuestions) {

@@ -4,9 +4,10 @@ import {
   Download, Eye, EyeOff, FileSpreadsheet, FileUp, Flame, GraduationCap, Keyboard, KeyRound, Layers3,
   LoaderCircle, Lock, LogOut, Maximize2, Minimize2, Plus,
   RotateCcw, ShieldCheck, Sparkles, Trash2, Trophy, Unlock, UserPlus, Users, X,
-  Volume2, Shuffle, Pencil, BarChart3, Medal, Timer, AlertTriangle, BookMarked,
+  Volume2, Shuffle, Pencil, BarChart3, Medal, Timer, AlertTriangle, BookMarked, Headphones,
 } from "lucide-react";
 import { DEMO_WORDS, POS_LABELS, makeQuizChoices, normalizeAnswer, shuffle, speakWord } from "./lib/vocabulary";
+import { makeWordFamilyChoices } from "./lib/wordFamilies";
 import {
   createDeck, createStudentAccounts, deleteDeck, deleteRoster, deleteOrphanedRosters, getCurrentAccount, isSupabaseConfigured,
   loadLibrary, loadRosterWorkbook, loadRosters, loadStudentResults, loadStudents,
@@ -46,10 +47,11 @@ const DEMO_DECK = {
   words: DEMO_WORDS,
 };
 
-const PRACTICE_MODES = [
+export const PRACTICE_MODES = [
   { id: "typing", title: "Điền từ", description: "Nhìn nghĩa và gõ lại từ tiếng Anh", icon: Keyboard, accent: "lime" },
   { id: "quiz", title: "Trắc nghiệm", description: "Chọn đáp án đúng từ 4 lựa chọn", icon: BrainCircuit, accent: "blue" },
   { id: "listening", title: "Luyện nghe chính tả", description: "Nghe phát âm tiếng Anh và gõ lại từ vựng", icon: Volume2, accent: "amber" },
+  { id: "listening_pos", title: "Nghe & Chọn từ loại", description: "Nghe phát âm và chọn đúng biến thể từ loại (N, V, Adj, Adv)", icon: Headphones, accent: "emerald" },
 ];
 
 function formatMode(mode) {
@@ -254,8 +256,13 @@ export function App() {
     return makeQuizChoices(currentWord, study.items);
   }, [currentWord, study?.mode, study?.items]);
 
+  const wordFamilyChoices = useMemo(() => {
+    if (!study || !currentWord || study.mode !== "listening_pos") return [];
+    return makeWordFamilyChoices(currentWord, study.items);
+  }, [currentWord, study?.mode, study?.items]);
+
   useEffect(() => {
-    if (view === "study" && study?.mode === "listening" && currentWord?.term) {
+    if (view === "study" && (study?.mode === "listening" || study?.mode === "listening_pos") && currentWord?.term) {
       const timer = window.setTimeout(() => {
         speakWord(currentWord.term);
       }, 350);
@@ -818,11 +825,16 @@ export function App() {
         if (choice && !study.disabledChoices?.includes(choice)) {
           answerCurrent(choice === currentWord.term, choice);
         }
+      } else if (study.mode === "listening_pos" && !isTyping && /^[1-4]$/.test(event.key)) {
+        const choice = wordFamilyChoices[Number(event.key) - 1];
+        if (choice && !study.disabledChoices?.includes(choice.term)) {
+          answerCurrent(choice.isCorrect, choice.term);
+        }
       }
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [answerCurrent, currentWord?.term, quizChoices, study, view]);
+  }, [answerCurrent, currentWord?.term, quizChoices, wordFamilyChoices, study, view]);
 
   async function handlePdf(file) {
     if (!file) return;
@@ -1592,6 +1604,7 @@ export function App() {
               study={study}
               currentWord={currentWord}
               quizChoices={quizChoices}
+              wordFamilyChoices={wordFamilyChoices}
               typingInputRef={typingInputRef}
               isFullscreen={isFullscreen}
               onBack={() => setLeaveDialog(true)}
@@ -3459,13 +3472,21 @@ function ImportView({ draft, availableClasses = [], isSaving, connection, onBack
   );
 }
 
-function StudyView({ study, currentWord, quizChoices, typingInputRef, isFullscreen, onBack, onFullscreen, onAnswer, onInput, onTypingSubmit, onTimeUp }) {
+export function StudyView({ study, currentWord, quizChoices, wordFamilyChoices, typingInputRef, isFullscreen, onBack, onFullscreen, onAnswer, onInput, onTypingSubmit, onTimeUp }) {
   const [secondsLeft, setSecondsLeft] = useState(study.timeLimitSeconds || null);
   const [showMeaningHint, setShowMeaningHint] = useState(false);
+  const [replaysLeft, setReplaysLeft] = useState(2);
 
   useEffect(() => {
     setShowMeaningHint(false);
+    setReplaysLeft(2);
   }, [study.index]);
+
+  const handleReplay = (options = { rate: 0.9 }) => {
+    if (replaysLeft <= 0) return;
+    setReplaysLeft((prev) => Math.max(0, prev - 1));
+    speakWord(currentWord.term, options);
+  };
 
   useEffect(() => {
     if (!study.timeLimitSeconds) return undefined;
@@ -3700,6 +3721,107 @@ function StudyView({ study, currentWord, quizChoices, typingInputRef, isFullscre
           {study.feedback === "wrong-final" && (
             <div className="correct-answer">
               <span>Đáp án đúng: <strong>{currentWord.term}</strong> ({currentWord.meaning})</span>
+              <button type="button" className="speak-answer-btn" onClick={() => speakWord(currentWord.term)} title="Nghe phát âm">
+                <Volume2 size={16} />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {study.mode === "listening_pos" && (
+        <div className="exercise-card listening-pos-card">
+          <div className="card-meta">
+            <span className="pos-chip pos-chip-family">Họ từ & Biến thể</span>
+            <span>Nghe & Chọn đúng dạng từ loại</span>
+            <span className={`replay-limit-badge ${replaysLeft === 0 ? "depleted" : ""}`}>
+              {replaysLeft > 0 ? `🎧 Còn ${replaysLeft} lượt nghe lại` : "🚫 Hết lượt nghe lại (tối đa 2)"}
+            </span>
+            {study.wordMistakes === 1 && (
+              <span className="attempt-badge">⚠️ Sai lần 1 (−25% điểm câu này)</span>
+            )}
+            {study.wordMistakes === 2 && (
+              <span className="attempt-badge">⚠️ Sai lần 2 (−75% điểm câu này)</span>
+            )}
+          </div>
+
+          <div className="audio-control-cluster">
+            <button
+              type="button"
+              className="big-speaker-btn"
+              onClick={() => handleReplay({ rate: 0.9 })}
+              disabled={replaysLeft <= 0 || Boolean(study.feedback === "correct" || study.feedback === "wrong-final")}
+              title={replaysLeft > 0 ? `Bấm để nghe phát âm từ vựng chuẩn (còn ${replaysLeft} lượt)` : "Đã hết lượt nghe lại cho câu này"}
+            >
+              <Volume2 size={38} />
+              <span>{replaysLeft > 0 ? "Nghe lại phát âm" : "Hết lượt nghe"}</span>
+            </button>
+            <div className="audio-sub-actions">
+              <button
+                type="button"
+                className="slow-speaker-btn"
+                onClick={() => handleReplay({ rate: 0.72 })}
+                disabled={replaysLeft <= 0 || Boolean(study.feedback === "correct" || study.feedback === "wrong-final")}
+                title={replaysLeft > 0 ? `Bấm để nghe chậm hơn 0.75x (còn ${replaysLeft} lượt)` : "Đã hết lượt nghe lại cho câu này"}
+              >
+                <Volume2 size={16} />
+                <span>Nghe chậm (0.75x)</span>
+              </button>
+              <button
+                type="button"
+                className={`hint-toggle-btn ${showMeaningHint ? "active" : ""}`}
+                onClick={() => setShowMeaningHint((prev) => !prev)}
+                title="Bấm để xem hoặc ẩn gợi ý nghĩa tiếng Việt"
+              >
+                <span>{showMeaningHint ? "Ẩn gợi ý nghĩa" : "Xem gợi ý nghĩa"}</span>
+              </button>
+            </div>
+          </div>
+
+          {showMeaningHint && (
+            <div className="listening-hint-box">
+              <span className="hint-label">Gợi ý nghĩa gốc:</span>
+              <strong>{currentWord.meaning}</strong>
+            </div>
+          )}
+
+          <div className="word-family-grid">
+            {(wordFamilyChoices || []).map((choice, index) => {
+              const isCorrect = choice.isCorrect;
+              const isEliminated = (study.disabledChoices || []).includes(choice.term);
+              let className = "family-choice-btn";
+              if (study.feedback === "correct" && isCorrect) {
+                className += " correct-choice";
+              } else if (study.feedback === "wrong-final") {
+                className += isCorrect ? " correct-choice" : " muted-choice";
+              } else if (isEliminated) {
+                className += " muted-choice disabled-choice";
+              }
+              return (
+                <button
+                  key={`${choice.term}-${choice.partOfSpeech}`}
+                  className={className}
+                  type="button"
+                  onClick={() => onAnswer(isCorrect, choice.term)}
+                  disabled={Boolean(study.feedback) || isEliminated}
+                >
+                  <div className="family-choice-header">
+                    <kbd>{index + 1}</kbd>
+                    <span className="family-pos-tag">{choice.posLabel} ({choice.partOfSpeech})</span>
+                  </div>
+                  <div className="family-choice-body">
+                    <span className="family-choice-term">{choice.term}</span>
+                    {study.feedback && isCorrect && <Check size={20} className="choice-status-icon" />}
+                    {isEliminated && <X size={18} className="choice-status-icon" />}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {study.feedback === "wrong-final" && (
+            <div className="correct-answer">
+              <span>Đáp án đúng: <strong>{currentWord.term}</strong> ({POS_LABELS[currentWord.partOfSpeech] || currentWord.partOfSpeech}: {currentWord.meaning})</span>
               <button type="button" className="speak-answer-btn" onClick={() => speakWord(currentWord.term)} title="Nghe phát âm">
                 <Volume2 size={16} />
               </button>
