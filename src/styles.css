@@ -4077,5 +4077,162 @@ kbd { margin-left: 6px; padding: 3px 6px; border: 1px solid rgba(255,255,255,.14
   color: #ffffff;
 }
 
+/* ==========================================================================
+   PASSWORD DUAL CELL (STUDENT DIRECTORY TABLE)
+   ========================================================================== */
+.password-dual-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 140px;
+}
+
+.pwd-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+}
+
+.pwd-tag {
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  min-width: 26px;
+}
+
+.pwd-line.new-pwd .pwd-tag {
+  color: #2e7d32;
+}
+
+.pwd-line.new-pwd code {
+  color: #1e6b22;
+  font-weight: 750;
+  background: rgba(46, 125, 50, 0.08);
+  border: 1px solid rgba(46, 125, 50, 0.25);
+  padding: 1px 6px;
+  border-radius: 6px;
+}
+
+.pwd-line.old-pwd .pwd-tag {
+  color: #8b7355;
+}
+
+.pwd-line.old-pwd code {
+  color: #6b533a;
+  background: rgba(139, 115, 85, 0.06);
+  border: 1px solid rgba(139, 115, 85, 0.2);
+  padding: 1px 6px;
+  border-radius: 6px;
+}
+
+.pwd-badge.unshifted {
+  font-size: 0.68rem;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: rgba(217, 119, 6, 0.12);
+  color: #b45309;
+  border: 1px solid rgba(217, 119, 6, 0.28);
+}
+
+/* ==========================================================================
+   FIRST LOGIN PASSWORD MODAL
+   ========================================================================== */
+.modal-backdrop.force-modal {
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 100;
+}
+
+.first-login-modal {
+  max-width: 460px;
+  width: 95vw;
+  padding: 32px 28px;
+  border-radius: 24px;
+  background: #ffffff;
+  border: 1.5px solid rgba(139, 115, 85, 0.25);
+  box-shadow: 0 24px 60px rgba(60, 40, 20, 0.2);
+}
+
+.first-login-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.first-login-icon {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #b8860b, #8b4513);
+  color: #ffffff;
+  box-shadow: 0 6px 20px rgba(139, 69, 19, 0.25);
+  margin-bottom: 4px;
+}
+
+.first-login-head h2 {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 850;
+  color: var(--ink);
+}
+
+.first-login-desc {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.first-login-desc b {
+  color: #8b4513;
+}
+
+.first-login-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 22px;
+}
+
+.pwd-guidance-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 10px 14px;
+  border-radius: 11px;
+  background: rgba(46, 125, 50, 0.08);
+  border: 1px solid rgba(46, 125, 50, 0.22);
+  font-size: 0.76rem;
+  color: #1e6b22;
+  line-height: 1.45;
+}
+
+.guidance-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: #2e7d32;
+}
+
+.first-login-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+}
+
+.cancel-first-login-btn {
+  width: 100%;
+  justify-content: center;
+}
+
+
 
 

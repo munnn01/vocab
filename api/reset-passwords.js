@@ -88,15 +88,30 @@ export default async function handler(request, response) {
         continue;
       }
 
-      await admin
+      const updatePayload = {
+        initial_password: newPassword,
+        current_password: null,
+        has_changed_password: false,
+      };
+      let { error: updateError } = await admin
         .from("profiles")
-        .update({ initial_password: newPassword })
+        .update(updatePayload)
         .eq("user_id", student.user_id);
+
+      if (updateError && (updateError.message?.includes("current_password") || updateError.message?.includes("has_changed_password"))) {
+        await admin
+          .from("profiles")
+          .update({ initial_password: newPassword })
+          .eq("user_id", student.user_id);
+      }
 
       updated.push({
         studentId: student.user_id,
         username: student.username,
         password: newPassword,
+        initialPassword: newPassword,
+        currentPassword: null,
+        hasChangedPassword: false,
       });
     } catch (err) {
       console.error("Lỗi đặt lại mật khẩu học sinh:", err);

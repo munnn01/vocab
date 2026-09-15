@@ -57,10 +57,14 @@ export function createDemoStudentAccounts({ students }) {
       username = `${normalizeStudentPrefix(student.className)}-${suffix}`;
     } while (usernames.has(username));
     usernames.add(username);
+    const initialPwd = makeReadablePassword();
     return {
       id: `demo-${username}`,
       username,
-      password: makeReadablePassword(),
+      password: initialPwd,
+      initialPassword: initialPwd,
+      currentPassword: null,
+      hasChangedPassword: false,
       className: student.className,
       displayName: student.displayName,
       rosterRow: student.rowNumber,
@@ -379,11 +383,13 @@ export function buildRosterCredentialsXlsx(workbook, accounts) {
     rows: accounts.map((account) => ({
       rowNumber: account.rosterRow,
       username: account.username,
-      password: account.password,
+      password: account.password || account.initialPassword,
+      currentPassword: account.hasChangedPassword && account.currentPassword ? account.currentPassword : "(Chưa đổi)",
     })),
     columns: [
       { key: "username", header: "Tên đăng nhập", width: 24 },
-      { key: "password", header: "Mật khẩu", width: 18 },
+      { key: "password", header: "Mật khẩu ban đầu (1 lần)", width: 22 },
+      { key: "currentPassword", header: "Mật khẩu hiện tại (học sinh đổi)", width: 26 },
     ],
   });
 }

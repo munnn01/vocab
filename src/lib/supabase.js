@@ -33,16 +33,30 @@ function toAccount(profile, user) {
     displayName: profile.display_name || (profile.role === "instructor" ? user.email : profile.username),
     className: profile.class_name,
     instructorId: profile.instructor_id,
+    initialPassword: profile.initial_password,
+    currentPassword: profile.current_password,
+    hasChangedPassword: Boolean(profile.has_changed_password),
   };
 }
 
 async function loadProfile(user) {
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from("profiles")
-    .select("user_id,role,username,display_name,class_name,instructor_id")
+    .select("user_id,role,username,display_name,class_name,instructor_id,initial_password,current_password,has_changed_password")
     .eq("user_id", user.id)
     .single();
-  if (error) throw error;
+
+  if (error && (error.message?.includes("current_password") || error.message?.includes("has_changed_password") || error.message?.includes("initial_password"))) {
+    const retry = await supabase
+      .from("profiles")
+      .select("user_id,role,username,display_name,class_name,instructor_id")
+      .eq("user_id", user.id)
+      .single();
+    if (retry.error) throw retry.error;
+    data = retry.data;
+  } else if (error) {
+    throw error;
+  }
   return toAccount(data, user);
 }
 
@@ -79,6 +93,30 @@ export async function signIn({ role, identifier, password }) {
   return account;
 }
 
+export async function changeStudentPassword(newPassword) {
+  if (!supabase) {
+    return { success: true };
+  }
+  const user = await requireUser();
+
+  const { error: authError } = await supabase.auth.updateUser({ password: newPassword });
+  if (authError) throw new Error(authError.message || "Không thể cập nhật mật khẩu đăng nhập.");
+
+  const { error: profileError } = await supabase
+    .from("profiles")
+    .update({
+      current_password: newPassword,
+      has_changed_password: true,
+    })
+    .eq("user_id", user.id);
+
+  if (profileError) {
+    console.warn("Lưu mật khẩu mới vào profiles thất bại:", profileError);
+  }
+
+  return { success: true };
+}
+
 export async function signOut() {
   if (supabase) await supabase.auth.signOut();
 }
@@ -87,18 +125,29 @@ export async function loadStudents() {
   const user = await requireUser();
   let { data, error } = await supabase
     .from("profiles")
-    .select("user_id,username,display_name,class_name,roster_id,roster_row,initial_password,created_at")
+    .select("user_id,username,display_name,class_name,roster_id,roster_row,initial_password,current_password,has_changed_password,created_at")
     .eq("instructor_id", user.id)
     .order("created_at", { ascending: false });
 
-  if (error && error.message?.includes("initial_password")) {
+  if (error && (error.message?.includes("current_password") || error.message?.includes("has_changed_password"))) {
     const retry = await supabase
       .from("profiles")
-      .select("user_id,username,display_name,class_name,roster_id,roster_row,created_at")
+      .select("user_id,username,display_name,class_name,roster_id,roster_row,initial_password,created_at")
       .eq("instructor_id", user.id)
       .order("created_at", { ascending: false });
-    if (retry.error) throw retry.error;
-    data = retry.data;
+    if (retry.error && retry.error.message?.includes("initial_password")) {
+      const retry2 = await supabase
+        .from("profiles")
+        .select("user_id,username,display_name,class_name,roster_id,roster_row,created_at")
+        .eq("instructor_id", user.id)
+        .order("created_at", { ascending: false });
+      if (retry2.error) throw retry2.error;
+      data = retry2.data;
+    } else if (retry.error) {
+      throw retry.error;
+    } else {
+      data = retry.data;
+    }
   } else if (error) {
     throw error;
   }
@@ -111,6 +160,8 @@ export async function loadStudents() {
     rosterId: student.roster_id,
     rosterRow: student.roster_row,
     initialPassword: student.initial_password,
+    currentPassword: student.current_password,
+    hasChangedPassword: Boolean(student.has_changed_password),
     createdAt: student.created_at,
   }));
 }

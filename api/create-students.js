@@ -96,10 +96,14 @@ async function createOneStudent(admin, instructor, rosterId, student) {
       roster_id: rosterId,
       roster_row: student.rowNumber,
       initial_password: password,
+      current_password: null,
+      has_changed_password: false,
     };
     let { error: profileError } = await admin.from("profiles").upsert(profilePayload);
-    if (profileError && profileError.message?.includes("initial_password")) {
+    if (profileError && (profileError.message?.includes("initial_password") || profileError.message?.includes("current_password") || profileError.message?.includes("has_changed_password"))) {
       delete profilePayload.initial_password;
+      delete profilePayload.current_password;
+      delete profilePayload.has_changed_password;
       const retry = await admin.from("profiles").upsert(profilePayload);
       profileError = retry.error;
     }
@@ -111,6 +115,9 @@ async function createOneStudent(admin, instructor, rosterId, student) {
       id: data.user.id,
       username,
       password,
+      initialPassword: password,
+      currentPassword: null,
+      hasChangedPassword: false,
       displayName: student.displayName,
       className: student.className,
       rosterId,

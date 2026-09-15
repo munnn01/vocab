@@ -10,7 +10,7 @@ import { DEMO_WORDS, POS_LABELS, makeQuizChoices, normalizeAnswer, shuffle, spea
 import {
   createDeck, createStudentAccounts, deleteDeck, deleteRoster, deleteOrphanedRosters, getCurrentAccount, isSupabaseConfigured,
   loadLibrary, loadRosterWorkbook, loadRosters, loadStudentResults, loadStudents,
-  resetStudentPasswords, saveStudySession, signIn, signOut,
+  resetStudentPasswords, saveStudySession, signIn, signOut, changeStudentPassword,
   updateDeckPracticeMode, updateDeckClassAccess, updateDeckLockAt, updateDeckMaxAttempts,
   updateDeckExamMode, updateDeckTimeLimit, updateDeckWords,
 } from "./lib/supabase";
@@ -28,6 +28,7 @@ import {
   DeckExamModeSettings,
   DeckTimeLimitSettings,
 } from "./components/StudyFeatures";
+import { FirstLoginPasswordModal } from "./components/FirstLoginPasswordModal";
 
 const DEMO_DECK = {
   id: "demo",
@@ -209,6 +210,7 @@ export function App() {
   const [isUpdatingExamMode, setIsUpdatingExamMode] = useState(false);
   const [deckToEdit, setDeckToEdit] = useState(null);
   const [isSavingDeckEdit, setIsSavingDeckEdit] = useState(false);
+  const [isSavingFirstPassword, setIsSavingFirstPassword] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [progressStudent, setProgressStudent] = useState(null);
   const [selectedDeckId, setSelectedDeckId] = useState("demo");
@@ -365,6 +367,23 @@ export function App() {
       setIsSavingDeckEdit(false);
     }
   }, [showToast]);
+
+  const handleSaveFirstPassword = useCallback(async (newPassword) => {
+    setIsSavingFirstPassword(true);
+    try {
+      await changeStudentPassword(newPassword);
+      setAccount((current) => (current ? { ...current, currentPassword: newPassword, hasChangedPassword: true } : current));
+      setStudents((current) =>
+        current.map((s) => (s.id === account?.id ? { ...s, currentPassword: newPassword, hasChangedPassword: true } : s))
+      );
+      showToast("Đã đổi mật khẩu thành công! Bạn có thể bắt đầu học.");
+    } catch (err) {
+      console.error("Lỗi đổi mật khẩu lần đầu:", err);
+      showToast(err.message || "Không thể lưu mật khẩu mới. Vui lòng thử lại.");
+    } finally {
+      setIsSavingFirstPassword(false);
+    }
+  }, [account?.id, showToast]);
 
   useEffect(() => () => {
     window.clearTimeout(toastTimerRef.current);
@@ -1061,7 +1080,9 @@ export function App() {
       setStudents((current) => {
         const next = accounts.map((student) => ({
           ...student,
-          initialPassword: student.password,
+          initialPassword: student.password || student.initialPassword,
+          currentPassword: null,
+          hasChangedPassword: false,
         }));
         const ids = new Set(next.map((student) => student.id));
         return [...next, ...current.filter((student) => !ids.has(student.id))];
@@ -1079,7 +1100,12 @@ export function App() {
       const res = await resetStudentPasswords(studentIds);
       const updatedMap = new Map((res.updated || []).map((u) => [u.studentId, u.password]));
       setStudents((current) =>
-        current.map((s) => (updatedMap.has(s.id) ? { ...s, initialPassword: updatedMap.get(s.id) } : s))
+        current.map((s) => (updatedMap.has(s.id) ? {
+          ...s,
+          initialPassword: updatedMap.get(s.id),
+          currentPassword: null,
+          hasChangedPassword: false,
+        } : s))
       );
       showToast(res.message || "Đã đặt lại mật khẩu thành công.");
     } catch (err) {
@@ -1554,6 +1580,13 @@ export function App() {
         deck={deckToEdit}
         onSave={handleSaveDeckWords}
         isSaving={isSavingDeckEdit}
+      />
+      <FirstLoginPasswordModal
+        isOpen={Boolean(account && account.role === "student" && !account.hasChangedPassword)}
+        student={account}
+        onSave={handleSaveFirstPassword}
+        onSignOut={handleSignOut}
+        isSaving={isSavingFirstPassword}
       />
 
       {leaveDialog && (
@@ -2041,7 +2074,7 @@ function InstructorView({ students, rosters, studentResults, decks = [], generat
                   <th>STT</th>
                   <th>Tên hiển thị</th>
                   <th>Tên đăng nhập</th>
-                  <th>Mật khẩu</th>
+                  <th>Mật khẩu ban đầu (1 lần)</th>
                   <th>Lớp</th>
                 </tr>
               </thead>
@@ -2205,7 +2238,7 @@ function InstructorView({ students, rosters, studentResults, decks = [], generat
                   <tr>
                     <th>Học sinh</th>
                     <th>Tên đăng nhập</th>
-                    <th>Mật khẩu</th>
+                    <th>Mật khẩu (Mới / Cũ)</th>
                     <th>Lớp</th>
                     {sortedDecks.map((deck) => (
                       <th key={deck.id} title={`Điểm bài: ${deck.title}`}>
@@ -2225,6 +2258,8 @@ function InstructorView({ students, rosters, studentResults, decks = [], generat
                     const issue = formatViolationText(result);
                     const badgeClass = getViolationBadgeClass(result);
                     const rawPassword = student.initialPassword || generatedAccountMap.get(student.username) || generatedAccountMap.get(student.id);
+                    const currentPassword = student.currentPassword;
+                    const hasChanged = Boolean(student.hasChangedPassword && currentPassword);
                     const isSelected = selectedStudentId === student.id;
                     return (
                       <tr
@@ -2236,11 +2271,26 @@ function InstructorView({ students, rosters, studentResults, decks = [], generat
                       <td>{student.displayName}</td>
                       <td><code>{student.username}</code></td>
                       <td>
-                        {showPasswords ? (
-                           rawPassword ? <code>{rawPassword}</code> : <span className="no-result" title="Mật khẩu tạo ở đợt trước khi có tính năng lưu. Bấm 'Cấp lại MK' ở trên để tạo mật khẩu mới.">Chưa lưu MK</span>
-                        ) : (
-                          <code>••••••••••</code>
-                        )}
+                        <div className="password-dual-cell">
+                          <div className="pwd-line new-pwd">
+                            <span className="pwd-tag">Mới:</span>
+                            {hasChanged ? (
+                              <code>{showPasswords ? currentPassword : "••••••••••"}</code>
+                            ) : (
+                              <span className="pwd-badge unshifted" title="Học sinh chưa đổi mật khẩu lần đầu (đang dùng mật khẩu 1 lần)">
+                                Chưa đổi
+                              </span>
+                            )}
+                          </div>
+                          <div className="pwd-line old-pwd">
+                            <span className="pwd-tag">Cũ:</span>
+                            {rawPassword ? (
+                              <code>{showPasswords ? rawPassword : "••••••••••"}</code>
+                            ) : (
+                              <span className="no-result" title="Mật khẩu tạo ở đợt trước khi có tính năng lưu. Bấm 'Cấp lại MK' ở trên để tạo mật khẩu mới.">Chưa lưu</span>
+                            )}
+                          </div>
+                        </div>
                       </td>
                       <td><span className="class-name-tag">{student.className}</span></td>
                       {sortedDecks.map((deck) => {
