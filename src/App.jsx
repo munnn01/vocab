@@ -2649,29 +2649,29 @@ function CreateDeckView({
         {/* Syntax Banner */}
         <div className="syntax-banner">
           <div className="syntax-code-wrap">
-            <span className="syntax-tag">Cú pháp từng dòng</span>
-            <code className="syntax-code">từ_vựng(loại_từ): nghĩa_tiếng_việt</code>
+            <span className="syntax-tag">Cú pháp hỗ trợ linh hoạt</span>
+            <code className="syntax-code">1. từ_vựng (loại_từ) /phiên_âm/ nghĩa_tiếng_việt</code>
           </div>
           <div className="syntax-rules">
             <div className="syntax-rule-item">
               <span className="rule-num">1</span>
               <div>
-                <strong>Mỗi từ trên 1 dòng riêng biệt</strong>
-                <p>Không ghép nhiều từ trên cùng một dòng văn bản. Nhấn Enter xuống dòng sau mỗi từ.</p>
+                <strong>Hỗ trợ giáo trình chuẩn (như Close-Up, Global...)</strong>
+                <p>Nhận diện tự động danh sách có số thứ tự <code>1. 2. 3.</code>, phiên âm IPA <code>/ˈɒnɪst/</code>, cụm động từ <code>(phr v)</code> và nghĩa tiếng Việt.</p>
               </div>
             </div>
             <div className="syntax-rule-item">
               <span className="rule-num">2</span>
               <div>
                 <strong>Loại từ đặt trong ngoặc đơn ( )</strong>
-                <p>Nằm ngay sau từ vựng: <code>(v)</code>, <code>(n)</code>, <code>(adj)</code>, <code>(adv)</code>...</p>
+                <p>Nằm cạnh từ vựng: <code>(v)</code>, <code>(n)</code>, <code>(adj)</code>, <code>(adv)</code>, <code>(phr v)</code>...</p>
               </div>
             </div>
             <div className="syntax-rule-item">
               <span className="rule-num">3</span>
               <div>
-                <strong>Dấu hai chấm : ngăn cách</strong>
-                <p>Bắt buộc có dấu hai chấm <code>:</code> giữa loại từ và phần giải nghĩa tiếng Việt.</p>
+                <strong>Không bắt buộc dấu hai chấm</strong>
+                <p>Hệ thống tự động nhận diện cả dạng có dấu hai chấm <code>:</code>, dấu gạch ngang <code>-</code> hoặc khoảng cách cột giữa từ và nghĩa.</p>
               </div>
             </div>
           </div>
@@ -2684,18 +2684,22 @@ function CreateDeckView({
               <Sparkles size={18} />
               <span>Ví dụ văn bản chuẩn trong PDF</span>
             </div>
-            <p className="format-card-desc">Bạn có thể sao chép văn bản bên dưới vào Word rồi xuất (Export/Save as) ra file PDF:</p>
+            <p className="format-card-desc">Hệ thống hỗ trợ cả định dạng giáo trình có phiên âm và định dạng rút gọn:</p>
             <div className="code-example-box">
               <pre>
-{`new(adj): mới, mới mẻ
-quiet(adj): yên tĩnh, thanh bình
-journey(n): chuyến đi, hành trình
-habit(n): thói quen
-improve(v): cải thiện, trau dồi
-prepare(v): chuẩn bị
-carefully(adv): một cách cẩn thận
-in spite of(prep): mặc dù, bất chấp
-break down(phrase): bị hỏng, suy sụp`}
+{`// Dạng 1: Giáo trình tiếng Anh chuẩn (như New Close Up)
+1. diving (n) /ˈdaɪvɪŋ/ Sự lặn
+2. festival (n) /ˈfestɪvl/ Lễ hội, ngày hội
+3. creative (adj) /kriˈeɪtɪv/ Sáng tạo
+4. look out for (phr v) /lʊk aʊt fə/ Chú ý, để mắt
+5. honest (adj) /ˈɒnɪst/ Trung thực, thật thà
+
+// Dạng 2: Soạn thảo nhanh (có dấu hai chấm hoặc gạch ngang)
+new (adj): mới, mới mẻ
+quiet (adj) - yên tĩnh, thanh bình
+journey (n): chuyến đi, hành trình
+improve (v): cải thiện, trau dồi
+carefully (adv): một cách cẩn thận`}
               </pre>
             </div>
           </div>

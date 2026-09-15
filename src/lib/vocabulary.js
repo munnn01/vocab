@@ -32,6 +32,17 @@ const POS_ALIASES = {
   idiom: "phrase",
   phrase: "phrase",
   "cụm từ": "phrase",
+  "phr v": "phrase",
+  "phrasal verb": "phrase",
+  phr: "phrase",
+  det: "other",
+  determiner: "other",
+  "prefix, adj": "adj",
+  prefix: "other",
+  modal: "v",
+  "modal verb": "v",
+  interjection: "other",
+  int: "other",
 };
 
 export const DISTRACTOR_BANK = {
@@ -64,50 +75,151 @@ export function normalizePos(rawPos = "") {
     .replace(/\s+/g, " ")
     .trim();
   if (POS_LABELS[clean]) return clean;
-  return POS_ALIASES[clean] || "other";
+  if (POS_ALIASES[clean]) return POS_ALIASES[clean];
+  if (clean.includes("adj")) return "adj";
+  if (clean.includes("adv")) return "adv";
+  if (clean.includes("verb") || clean.startsWith("v")) return "v";
+  if (clean.includes("noun") || clean.startsWith("n")) return "n";
+  if (clean.includes("phrase") || clean.includes("phr")) return "phrase";
+  return "other";
 }
 
 function cleanField(value = "") {
   return value.replace(/\s+/g, " ").replace(/^[•·\-–—\d.)\s]+/, "").trim();
 }
 
+function isSectionHeader(line = "") {
+  const trimmed = line.trim();
+  const clean = trimmed.replace(/^[•·\-–—\d.)\s]+/, "").trim();
+  if (/^(New Close Up|UNIT\s+\d+|[IVXLCDM]+\.|\d+$)/i.test(trimmed)) return true;
+  if (/^(READING|VOCABULARY|GRAMMAR|LISTENING|SPEAKING|WRITING)$/i.test(clean)) return true;
+  return false;
+}
+
 export function parseVocabularyText(text = "") {
   const normalized = text
     .replace(/\r/g, "\n")
     .replace(/[：﹕]/g, ":")
+    .replace(/[–—]/g, "-")
     .replace(/\u00a0/g, " ");
 
-  const candidates = normalized
-    .split(/\n|(?<=\S)\s{3,}(?=[A-Za-zÀ-ỹ])/)
-    .map(cleanField)
+  const rawLines = normalized
+    .split("\n")
+    .map((l) => l.trim())
     .filter(Boolean);
+
+  // Step 1: Filter headers & stitch wrapped lines
+  const stitchedLines = [];
+  for (const line of rawLines) {
+    if (isSectionHeader(line)) continue;
+
+    const isNumbered = /^\d+[\.\)]\s+/.test(line);
+
+    if (isNumbered || stitchedLines.length === 0) {
+      stitchedLines.push(line);
+    } else {
+      const prev = stitchedLines[stitchedLines.length - 1];
+      const prevOpenParen = (prev.match(/\(/g) || []).length;
+      const prevCloseParen = (prev.match(/\)/g) || []).length;
+
+      // Case A: Unclosed parenthesis on previous line, e.g. '(phr' and next line 'v)'
+      if (prevOpenParen > prevCloseParen) {
+        stitchedLines[stitchedLines.length - 1] = `${prev} ${line}`;
+      }
+      // Case B: Phonetics continuation
+      else if (line.startsWith("/") && !prev.includes("/")) {
+        stitchedLines[stitchedLines.length - 1] = `${prev} ${line}`;
+      }
+      // Case C: Wrapped meaning continuation (line has no '(', '/', ':', '-')
+      else if (!line.includes("(") && !line.includes("/") && !line.includes(":") && !line.includes("-")) {
+        stitchedLines[stitchedLines.length - 1] = `${prev} ${line}`;
+      } else {
+        stitchedLines.push(line);
+      }
+    }
+  }
 
   const entries = [];
   const rejected = [];
   const seen = new Set();
-  const linePattern = /^(.{1,90}?)\s*\(\s*([^)]+?)\s*\)\s*:\s*(.{1,240})$/u;
 
-  for (const line of candidates) {
-    const match = line.match(linePattern);
-    if (!match) {
-      if (line.includes(":") || line.includes("(")) rejected.push(line);
-      continue;
+  for (const line of stitchedLines) {
+    const cleanLine = line.replace(/^\d+[\.\)]\s*/, "").trim();
+
+    let term = "";
+    let rawPos = "";
+    let phonetics = "";
+    let meaning = "";
+
+    // Pattern 1: term ... (pos) ... /phonetics/ ... meaning
+    const m1 = cleanLine.match(/^(.+?)\s*\(\s*([^)]+?)\s*\)\s*(?:\/([^\/]+)\/|\[([^\]]+)\])\s*(?::\s*|\s*-\s*|\s+)(.+)$/u);
+    if (m1) {
+      term = m1[1];
+      rawPos = m1[2];
+      phonetics = m1[3] || m1[4] || "";
+      meaning = m1[5];
+    } else {
+      // Pattern 2: term ... /phonetics/ ... (pos) ... meaning
+      const m2 = cleanLine.match(/^(.+?)\s*(?:\/([^\/]+)\/|\[([^\]]+)\])\s*\(\s*([^)]+?)\s*\)\s*(?::\s*|\s*-\s*|\s+)(.+)$/u);
+      if (m2) {
+        term = m2[1];
+        rawPos = m2[4];
+        phonetics = m2[2] || m2[3] || "";
+        meaning = m2[5];
+      } else {
+        // Pattern 3: term ... (pos) ... meaning (colon, dash, or whitespace)
+        const m3 = cleanLine.match(/^(.+?)\s*\(\s*([^)]+?)\s*\)\s*(?::\s*|\s*-\s*|\s{2,}|\s+)(.+)$/u);
+        if (m3) {
+          term = m3[1];
+          rawPos = m3[2];
+          meaning = m3[3];
+        } else {
+          // Pattern 4: term ... /phonetics/ ... meaning
+          const m4 = cleanLine.match(/^(.+?)\s*(?:\/([^\/]+)\/|\[([^\]]+)\])\s*(?::\s*|\s*-\s*|\s+)(.+)$/u);
+          if (m4) {
+            term = m4[1];
+            rawPos = "other";
+            phonetics = m4[2] || m4[3] || "";
+            meaning = m4[4];
+          } else {
+            // Pattern 5: term : meaning or term - meaning
+            const m5 = cleanLine.match(/^(.+?)\s*(?::\s*|\s+-\s+)(.+)$/u);
+            if (m5) {
+              term = m5[1];
+              rawPos = "other";
+              meaning = m5[2];
+            } else {
+              if (line.includes(":") || line.includes("(") || line.includes("/")) {
+                rejected.push(line);
+              }
+              continue;
+            }
+          }
+        }
+      }
     }
 
-    const term = cleanField(match[1]);
-    const partOfSpeech = normalizePos(match[2]);
-    const meaning = cleanField(match[3]);
-    if (!term || !meaning) continue;
+    const cleanTerm = cleanField(term);
+    const partOfSpeech = normalizePos(rawPos);
+    const cleanMeaning = cleanField(meaning);
+    const cleanPhonetics = phonetics.trim();
 
-    const key = `${term.toLocaleLowerCase("en")}::${partOfSpeech}`;
+    if (!cleanTerm || !cleanMeaning) continue;
+
+    const key = `${cleanTerm.toLocaleLowerCase("en")}::${partOfSpeech}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    entries.push({
+
+    const entry = {
       id: crypto.randomUUID(),
-      term,
+      term: cleanTerm,
       partOfSpeech,
-      meaning,
-    });
+      meaning: cleanMeaning,
+    };
+    if (cleanPhonetics) {
+      entry.phonetics = cleanPhonetics;
+    }
+    entries.push(entry);
   }
 
   return { entries, rejected };

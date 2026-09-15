@@ -8,21 +8,44 @@ function linesFromTextItems(items) {
   const rows = new Map();
 
   for (const item of items) {
-    if (!("str" in item) || !item.str.trim()) continue;
-    const y = Math.round(item.transform[5] / 3) * 3;
+    if (!("str" in item) || item.str === "") continue;
+    // Group text items sharing similar vertical baseline (tolerance ~3.5 points)
+    const y = Math.round(item.transform[5] / 3.5) * 3.5;
     const row = rows.get(y) || [];
-    row.push({ x: item.transform[4], text: item.str.trim() });
+    row.push({
+      x: item.transform[4],
+      width: item.width || 0,
+      text: item.str,
+    });
     rows.set(y, row);
   }
 
   return [...rows.entries()]
     .sort(([yA], [yB]) => yB - yA)
-    .map(([, row]) =>
-      row
-        .sort((a, b) => a.x - b.x)
-        .map((item) => item.text)
-        .join(" "),
-    )
+    .map(([, row]) => {
+      const sorted = row.sort((a, b) => a.x - b.x);
+      let line = "";
+      let lastX = null;
+      let lastWidth = 0;
+
+      for (const item of sorted) {
+        if (!item.text) continue;
+        if (lastX === null) {
+          line += item.text;
+        } else {
+          const gap = item.x - (lastX + lastWidth);
+          // If there is an evident gap (>= 2.5 points) and neither piece has a space, insert one
+          if (gap >= 2.5 && !line.endsWith(" ") && !item.text.startsWith(" ")) {
+            line += " ";
+          }
+          line += item.text;
+        }
+        lastX = item.x;
+        lastWidth = item.width;
+      }
+      return line.trim();
+    })
+    .filter(Boolean)
     .join("\n");
 }
 
