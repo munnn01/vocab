@@ -122,7 +122,27 @@ export function shuffle(items) {
   return copy;
 }
 
-export function makeQuizChoices(currentWord, allWords, choiceCount = 4) {
+export function makeQuizChoices(currentWord, allWords, choiceCount = 4, direction = "meaning-to-term") {
+  if (direction === "term-to-meaning") {
+    const sameTypeMeanings = allWords
+      .filter(
+        (word) =>
+          word.partOfSpeech === currentWord.partOfSpeech &&
+          word.meaning.toLocaleLowerCase("vi") !== currentWord.meaning.toLocaleLowerCase("vi"),
+      )
+      .map((word) => word.meaning);
+
+    const otherMeanings = allWords
+      .filter((word) => word.meaning.toLocaleLowerCase("vi") !== currentWord.meaning.toLocaleLowerCase("vi"))
+      .map((word) => word.meaning);
+
+    const unique = [...new Set([...shuffle(sameTypeMeanings), ...shuffle(otherMeanings)])].filter(
+      (m) => m.toLocaleLowerCase("vi") !== currentWord.meaning.toLocaleLowerCase("vi"),
+    );
+
+    return shuffle([currentWord.meaning, ...unique.slice(0, choiceCount - 1)]);
+  }
+
   const sameType = allWords
     .filter(
       (word) =>
@@ -148,13 +168,13 @@ export function normalizeAnswer(value = "") {
     .trim();
 }
 
-export function speakWord(term) {
+export function speakWord(term, options = {}) {
   if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
   try {
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(term);
-    utterance.lang = "en-US";
-    utterance.rate = 0.9;
+    utterance.lang = options.lang || "en-US";
+    utterance.rate = typeof options.rate === "number" ? options.rate : 0.9;
     window.speechSynthesis.speak(utterance);
   } catch (err) {
     console.warn("Speech synthesis error", err);

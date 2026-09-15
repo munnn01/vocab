@@ -29,6 +29,9 @@ import {
   isDeckAttemptsExhausted,
   InstructorView,
 } from "./App";
+import { MostMissedWordsModal } from "./components/MostMissedWordsModal";
+import { DeckShuffleSettings } from "./components/StudyFeatures";
+import { makeQuizChoices } from "./lib/vocabulary";
 
 test("App renders without crashing", () => {
   const html = renderToString(<App />);
@@ -534,6 +537,103 @@ test("results export includes avgScore as the last column", () => {
   expect(lastCol.key).toBe("avgScore");
   expect(lastCol.header).toBe("Điểm trung bình");
 });
+
+test("MostMissedWordsModal renders correctly with aggregated mistakes and risk tags", () => {
+  const decks = [
+    {
+      id: "deck-1",
+      title: "Chương 1: School",
+      words: [
+        { id: "w1", term: "scholarship", meaning: "học bổng", partOfSpeech: "n" },
+        { id: "w2", term: "curriculum", meaning: "chương trình học", partOfSpeech: "n" },
+      ],
+    },
+  ];
+  const students = [
+    { id: "s1", displayName: "Nguyễn Văn A", className: "12A1" },
+    { id: "s2", displayName: "Trần Thị B", className: "12A1" },
+  ];
+  const studentResults = [
+    {
+      studentId: "s1",
+      deckId: "deck-1",
+      deckTitle: "Chương 1: School",
+      mistakeWords: [
+        { term: "curriculum", meaning: "chương trình học", partOfSpeech: "n" },
+        { term: "scholarship", meaning: "học bổng", partOfSpeech: "n" },
+      ],
+    },
+    {
+      studentId: "s2",
+      deckId: "deck-1",
+      deckTitle: "Chương 1: School",
+      mistakeWords: [
+        { term: "curriculum", meaning: "chương trình học", partOfSpeech: "n" },
+      ],
+    },
+  ];
+
+  const html = renderToString(
+    <MostMissedWordsModal
+      isOpen={true}
+      onClose={() => {}}
+      decks={decks}
+      students={students}
+      studentResults={studentResults}
+      initialDeckId="deck-1"
+      initialClass="all"
+    />
+  );
+
+  // Checks modal title and header
+  expect(html).toContain("Top từ vựng học sinh hay làm sai nhất");
+  expect(html).toContain("Phân tích kết quả học tập");
+
+  // Check ranked words: "curriculum" has 2 mistakes, "scholarship" has 1 mistake
+  expect(html).toContain("curriculum");
+  expect(html).toContain("scholarship");
+  expect(html).toContain("lượt sai");
+  expect(html).toContain("Sao chép danh sách từ khó");
+});
+
+test("DeckShuffleSettings renders toggle options for question shuffling", () => {
+  const htmlShuffleOn = renderToString(
+    <DeckShuffleSettings shuffleQuestions={true} onChange={() => {}} disabled={false} />
+  );
+  expect(htmlShuffleOn).toContain("Đang bật đảo ngẫu nhiên");
+  expect(htmlShuffleOn).toContain("Đảo ngẫu nhiên câu hỏi");
+
+  const htmlShuffleOff = renderToString(
+    <DeckShuffleSettings shuffleQuestions={false} onChange={() => {}} disabled={false} />
+  );
+  expect(htmlShuffleOff).toContain("Theo thứ tự danh sách");
+  expect(htmlShuffleOff).toContain("Giữ nguyên thứ tự từ");
+});
+
+test("makeQuizChoices supports both meaning-to-term and term-to-meaning directions", () => {
+  const words = [
+    { id: "1", term: "cat", meaning: "con mèo", partOfSpeech: "n" },
+    { id: "2", term: "dog", meaning: "con chó", partOfSpeech: "n" },
+    { id: "3", term: "bird", meaning: "con chim", partOfSpeech: "n" },
+    { id: "4", term: "fish", meaning: "con cá", partOfSpeech: "n" },
+  ];
+
+  // Default: meaning-to-term returns term options
+  const choices1 = makeQuizChoices(words[0], words, 4, "meaning-to-term");
+  expect(choices1).toHaveLength(4);
+  expect(choices1).toContain("cat");
+
+  // Reverse: term-to-meaning returns meaning options
+  const choices2 = makeQuizChoices(words[0], words, 4, "term-to-meaning");
+  expect(choices2).toHaveLength(4);
+  expect(choices2).toContain("con mèo");
+});
+
+test("speakWord safely accepts rate options without crashing", () => {
+  expect(() => speakWord("hello", { rate: 0.72 })).not.toThrow();
+  expect(() => speakWord("world", { rate: 1.0 })).not.toThrow();
+});
+
 
 
 

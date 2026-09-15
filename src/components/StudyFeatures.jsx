@@ -685,6 +685,46 @@ export function DeckExamModeSettings({ isExamMode, onChange, disabled }) {
   );
 }
 
+export function DeckShuffleSettings({ shuffleQuestions, onChange, disabled }) {
+  const isShuffle = shuffleQuestions !== false;
+  return (
+    <div className="setting-card shuffle-setting">
+      <div className="setting-card-head">
+        <div className="setting-icon-title">
+          <Shuffle size={18} className="setting-icon" />
+          <strong>Đảo thứ tự câu hỏi &amp; đáp án</strong>
+        </div>
+        <span className={`status-pill ${isShuffle ? "strict" : "relaxed"}`}>
+          {isShuffle ? "Đang bật đảo ngẫu nhiên" : "Theo thứ tự danh sách"}
+        </span>
+      </div>
+      <p className="setting-description">
+        {isShuffle
+          ? "Mỗi học sinh khi vào thi sẽ nhận được thứ tự câu hỏi và các phương án A, B, C, D được xáo ngẫu nhiên, giúp chống nhìn bài nhau."
+          : "Câu hỏi sẽ xuất hiện tuần tự theo đúng thứ tự trong danh sách từ vựng gốc."}
+      </p>
+      <div className="mode-toggle-group">
+        <button
+          type="button"
+          className={`toggle-option-btn ${isShuffle ? "active" : ""}`}
+          onClick={() => onChange(true)}
+          disabled={disabled}
+        >
+          <Shuffle size={16} /> Đảo ngẫu nhiên câu hỏi
+        </button>
+        <button
+          type="button"
+          className={`toggle-option-btn ${!isShuffle ? "active" : ""}`}
+          onClick={() => onChange(false)}
+          disabled={disabled}
+        >
+          <BookOpen size={16} /> Giữ nguyên thứ tự từ
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function DeckTimeLimitSettings({ timeLimitMinutes, onChange, disabled }) {
   const currentLimit = timeLimitMinutes || null;
   const options = [

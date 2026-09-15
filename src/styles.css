@@ -4264,6 +4264,428 @@ kbd { margin-left: 6px; padding: 3px 6px; border: 1px solid rgba(255,255,255,.14
   justify-content: center;
 }
 
+/* ==========================================================================
+   LISTENING PRACTICE MODE (CHẾ ĐỘ LUYỆN NGHE & GÕ CHÍNH TẢ)
+   ========================================================================== */
+.listening-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 20px;
+}
+
+.audio-control-cluster {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  margin: 12px 0;
+}
+
+.big-speaker-btn {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px 36px;
+  border-radius: 24px;
+  border: 2px solid rgba(184, 134, 11, 0.35);
+  background: linear-gradient(135deg, #fff9ee 0%, #fdf4e2 100%);
+  color: #8b4513;
+  cursor: pointer;
+  box-shadow: 0 10px 28px rgba(139, 69, 19, 0.12), inset 0 2px 0 #ffffff;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.big-speaker-btn:hover {
+  transform: translateY(-2px) scale(1.02);
+  border-color: #b8860b;
+  box-shadow: 0 14px 34px rgba(139, 69, 19, 0.18), inset 0 2px 0 #ffffff;
+}
+
+.big-speaker-btn:active {
+  transform: translateY(1px) scale(0.98);
+}
+
+.big-speaker-btn span {
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.audio-sub-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.slow-speaker-btn,
+.hint-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(139, 115, 85, 0.25);
+  background: #ffffff;
+  color: #5c3a21;
+  font-family: inherit;
+  font-size: 0.84rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.slow-speaker-btn:hover,
+.hint-toggle-btn:hover {
+  background: #fcf8f0;
+  border-color: #8b4513;
+  color: #8b4513;
+}
+
+.hint-toggle-btn.active {
+  background: #fdf3e2;
+  border-color: #d97706;
+  color: #b45309;
+}
+
+.listening-hint-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-radius: 12px;
+  background: rgba(184, 134, 11, 0.08);
+  border: 1px dashed rgba(184, 134, 11, 0.35);
+  color: #78350f;
+  font-size: 0.95rem;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.listening-hint-box .hint-label {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.8;
+  font-weight: 700;
+}
+
+/* ==========================================================================
+   MOST MISSED WORDS MODAL (TOP TỪ HAY LÀM SAI)
+   ========================================================================== */
+.missed-words-modal {
+  width: 92%;
+  max-width: 780px;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.missed-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.warning-badge-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: rgba(217, 119, 6, 0.12);
+  color: #d97706;
+  border: 1px solid rgba(217, 119, 6, 0.25);
+}
+
+.missed-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 18px;
+  background: #fbf7f0;
+  border-radius: 14px;
+  border: 1px solid rgba(139, 115, 85, 0.15);
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.missed-filter-bar .filter-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.missed-filter-bar label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.8rem;
+  font-weight: 750;
+  color: #6b4e31;
+}
+
+.missed-filter-bar select {
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1.5px solid rgba(139, 115, 85, 0.25);
+  background: #ffffff;
+  color: #2c1810;
+  font-family: inherit;
+  font-size: 0.84rem;
+  font-weight: 700;
+  outline: none;
+  cursor: pointer;
+}
+
+.missed-filter-bar select:focus {
+  border-color: #8b4513;
+}
+
+.missed-summary-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.missed-summary-cards .progress-card {
+  padding: 14px 18px;
+  background: #ffffff;
+  border-radius: 14px;
+  border: 1px solid rgba(139, 115, 85, 0.16);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.progress-card-label {
+  font-size: 0.76rem;
+  font-weight: 750;
+  color: #8b7355;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.progress-card-value {
+  font-size: 1.3rem;
+  font-weight: 850;
+}
+
+.text-blue { color: #2c6fbb; }
+.text-amber { color: #d97706; }
+.text-danger { color: #c0392b; }
+.text-green { color: #2e7d32; }
+
+.missed-list-wrap {
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 4px;
+  max-height: 48vh;
+}
+
+.missed-words-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.missed-word-item {
+  display: grid;
+  grid-template-columns: 36px 1fr auto;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(139, 115, 85, 0.16);
+  background: #ffffff;
+  transition: all 0.15s ease;
+}
+
+.missed-word-item:hover {
+  background: #fdfbf7;
+  border-color: rgba(139, 115, 85, 0.3);
+  box-shadow: 0 4px 12px rgba(60, 40, 20, 0.05);
+}
+
+.missed-rank {
+  font-size: 0.92rem;
+  font-weight: 850;
+  color: #8b7355;
+  text-align: center;
+}
+
+.missed-word-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.missed-word-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.missed-term {
+  font-size: 1.05rem;
+  font-weight: 850;
+  color: #2c1810;
+}
+
+.speak-inline-btn {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid rgba(139, 115, 85, 0.2);
+  background: #fdfaf4;
+  color: #8b4513;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.speak-inline-btn:hover {
+  background: #8b4513;
+  color: #ffffff;
+}
+
+.missed-meaning {
+  font-size: 0.88rem;
+  color: #5c3a21;
+}
+
+.missed-deck-source {
+  font-size: 0.74rem;
+  color: #9c8366;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.missed-stat-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  min-width: 140px;
+}
+
+.missed-count-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.missed-count-badge strong {
+  font-size: 0.88rem;
+  color: #2c1810;
+}
+
+.missed-count-badge small {
+  font-size: 0.76rem;
+  color: #8b7355;
+}
+
+.missed-level-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.badge-danger {
+  background: rgba(192, 57, 43, 0.12);
+  color: #c0392b;
+  border: 1px solid rgba(192, 57, 43, 0.25);
+}
+
+.badge-warning {
+  background: rgba(217, 119, 6, 0.12);
+  color: #d97706;
+  border: 1px solid rgba(217, 119, 6, 0.25);
+}
+
+.badge-safe {
+  background: rgba(46, 125, 50, 0.1);
+  color: #2e7d32;
+  border: 1px solid rgba(46, 125, 50, 0.2);
+}
+
+.missed-progress-track {
+  width: 100%;
+  height: 6px;
+  background: #ede6d8;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.missed-progress-bar {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.bar-danger {
+  background: linear-gradient(90deg, #e74c3c, #c0392b);
+}
+
+.bar-warning {
+  background: linear-gradient(90deg, #f39c12, #d97706);
+}
+
+.bar-safe {
+  background: linear-gradient(90deg, #6b8e23, #4a8c3f);
+}
+
+.empty-missed-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 48px 24px;
+  border-radius: 16px;
+  border: 1.5px dashed rgba(139, 115, 85, 0.2);
+  background: #ffffff;
+  gap: 10px;
+}
+
+.empty-missed-box h3 {
+  margin: 0;
+  font-size: 1.15rem;
+  color: #2c1810;
+}
+
+.empty-missed-box p {
+  margin: 0;
+  font-size: 0.88rem;
+  color: #8b7355;
+  max-width: 420px;
+}
+
+.missed-actions {
+  margin-top: 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+
 
 
 

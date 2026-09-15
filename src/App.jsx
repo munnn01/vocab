@@ -12,7 +12,7 @@ import {
   loadLibrary, loadRosterWorkbook, loadRosters, loadStudentResults, loadStudents,
   resetStudentPasswords, saveStudySession, signIn, signOut, changeStudentPassword,
   updateDeckPracticeMode, updateDeckClassAccess, updateDeckLockAt, updateDeckMaxAttempts,
-  updateDeckExamMode, updateDeckTimeLimit, updateDeckWords,
+  updateDeckExamMode, updateDeckTimeLimit, updateDeckWords, updateDeckShuffle,
 } from "./lib/supabase";
 import {
   createDemoStudentAccounts, downloadRosterCredentialsXlsx, downloadRosterResultsXlsx,
@@ -26,9 +26,11 @@ import {
   StudentProgressModal,
   EditDeckModal,
   DeckExamModeSettings,
+  DeckShuffleSettings,
   DeckTimeLimitSettings,
 } from "./components/StudyFeatures";
 import { FirstLoginPasswordModal } from "./components/FirstLoginPasswordModal";
+import { MostMissedWordsModal } from "./components/MostMissedWordsModal";
 
 const DEMO_DECK = {
   id: "demo",
@@ -47,6 +49,7 @@ const DEMO_DECK = {
 const PRACTICE_MODES = [
   { id: "typing", title: "Điền từ", description: "Nhìn nghĩa và gõ lại từ tiếng Anh", icon: Keyboard, accent: "lime" },
   { id: "quiz", title: "Trắc nghiệm", description: "Chọn đáp án đúng từ 4 lựa chọn", icon: BrainCircuit, accent: "blue" },
+  { id: "listening", title: "Luyện nghe chính tả", description: "Nghe phát âm tiếng Anh và gõ lại từ vựng", icon: Volume2, accent: "amber" },
 ];
 
 function formatMode(mode) {
@@ -208,6 +211,7 @@ export function App() {
   const [isUpdatingMaxAttempts, setIsUpdatingMaxAttempts] = useState(false);
   const [isUpdatingTimeLimit, setIsUpdatingTimeLimit] = useState(false);
   const [isUpdatingExamMode, setIsUpdatingExamMode] = useState(false);
+  const [isUpdatingShuffle, setIsUpdatingShuffle] = useState(false);
   const [deckToEdit, setDeckToEdit] = useState(null);
   const [isSavingDeckEdit, setIsSavingDeckEdit] = useState(false);
   const [isSavingFirstPassword, setIsSavingFirstPassword] = useState(false);
@@ -250,6 +254,15 @@ export function App() {
     return makeQuizChoices(currentWord, study.items);
   }, [currentWord, study?.mode, study?.items]);
 
+  useEffect(() => {
+    if (view === "study" && study?.mode === "listening" && currentWord?.term) {
+      const timer = window.setTimeout(() => {
+        speakWord(currentWord.term);
+      }, 350);
+      return () => window.clearTimeout(timer);
+    }
+  }, [view, study?.mode, study?.index, currentWord?.term]);
+
   const showToast = useCallback((message) => {
     setToast(message);
     window.clearTimeout(toastTimerRef.current);
@@ -291,6 +304,26 @@ export function App() {
       } catch { /* ignore */ }
     }
 
+    if (account?.demo) {
+      setStudentResults((prev) => [
+        {
+          id: crypto.randomUUID(),
+          studentId: account.id,
+          deckId: finalStudy.deckId,
+          deckTitle: finalStudy.deckTitle,
+          mode: finalStudy.mode,
+          score: finalStudy.score,
+          correct: finalStudy.correct,
+          total: finalStudy.items.length,
+          completed,
+          violationReason: resolvedViolationReason,
+          mistakeWords,
+          completedAt: new Date().toISOString(),
+        },
+        ...prev,
+      ]);
+    }
+
     saveStudySession({
       deckId: finalStudy.deckId,
       mode: finalStudy.mode,
@@ -299,6 +332,7 @@ export function App() {
       total: finalStudy.items.length,
       completed,
       violationReason: resolvedViolationReason,
+      mistakeWords,
     }).then(() => {
       setSessions((current) => [{
         id: crypto.randomUUID(),
@@ -308,13 +342,14 @@ export function App() {
         total_count: finalStudy.items.length,
         completed,
         violation_reason: resolvedViolationReason,
+        mistake_words: mistakeWords,
         created_at: new Date().toISOString(),
       }, ...current]);
     }).catch((error) => {
       console.error("Không thể lưu phiên học", error);
       showToast("Lỗi khi lưu kết quả lên máy chủ: " + (error.message || error));
     });
-  }, [account?.id, showToast]);
+  }, [account?.id, account?.demo, showToast]);
 
   const getSavedMistakes = useCallback((deckId) => {
     if (!account?.id || !deckId || typeof localStorage === "undefined") return [];
@@ -351,6 +386,19 @@ export function App() {
       showToast(err.message || "Không thể cập nhật chế độ kiểm tra");
     } finally {
       setIsUpdatingExamMode(false);
+    }
+  }, [showToast]);
+
+  const handleDeckShuffle = useCallback(async (deckId, shuffleQuestions) => {
+    setIsUpdatingShuffle(true);
+    try {
+      await updateDeckShuffle(deckId, shuffleQuestions);
+      setDecks((current) => current.map((d) => (d.id === deckId ? { ...d, shuffleQuestions } : d)));
+      showToast(shuffleQuestions ? "Đã bật xáo trộn ngẫu nhiên thứ tự câu hỏi" : "Đã tắt xáo trộn (làm bài theo thứ tự gốc)");
+    } catch (err) {
+      showToast(err.message || "Không thể cập nhật cấu hình xáo trộn câu hỏi");
+    } finally {
+      setIsUpdatingShuffle(false);
     }
   }, [showToast]);
 
@@ -532,7 +580,7 @@ export function App() {
     setStudy({
       deckId: selectedDeck.id,
       deckTitle: isMistakePractice ? `${selectedDeck.title} (Ôn từ sai)` : selectedDeck.title,
-      items: shuffle(wordsToStudy),
+      items: selectedDeck?.shuffleQuestions !== false ? shuffle(wordsToStudy) : [...wordsToStudy],
       index: 0,
       mode,
       score: 0,
@@ -1472,6 +1520,7 @@ export function App() {
               isUpdatingMaxAttempts={isUpdatingMaxAttempts}
               isUpdatingTimeLimit={isUpdatingTimeLimit}
               isUpdatingExamMode={isUpdatingExamMode}
+              isUpdatingShuffle={isUpdatingShuffle}
               isDeletingDeck={isDeletingDeck}
               importProgress={importProgress}
               onPickPdf={() => fileInputRef.current?.click()}
@@ -1482,6 +1531,7 @@ export function App() {
               onMaxAttemptsChange={handleDeckMaxAttempts}
               onTimeLimitChange={handleDeckTimeLimit}
               onExamModeChange={handleDeckExamMode}
+              onShuffleChange={handleDeckShuffle}
               onDeleteDeck={(deck) => setDeckToDelete(deck)}
               onEditDeck={(deck) => setDeckToEdit(deck)}
               onFlashcard={() => setView("flashcard")}
@@ -1803,6 +1853,7 @@ export function InstructorView({ students, rosters, studentResults, decks = [], 
   const [showPasswords, setShowPasswords] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState(null);
   const [selectedNewAccountId, setSelectedNewAccountId] = useState(null);
+  const [isMissedWordsOpen, setIsMissedWordsOpen] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -2166,6 +2217,15 @@ export function InstructorView({ students, rosters, studentResults, decks = [], 
               )}
             </div>
             <div className="tools-group action-tools-group">
+              <button
+                className="secondary-button password-toggle"
+                type="button"
+                onClick={() => setIsMissedWordsOpen(true)}
+                title="Xem danh sách những từ vựng học sinh hay làm sai nhất"
+              >
+                <AlertTriangle size={17} />
+                <span>Từ hay làm sai</span>
+              </button>
               <button className="secondary-button password-toggle" type="button" onClick={() => setShowPasswords((shown) => !shown)}>
                 {showPasswords ? <EyeOff size={17} /> : <Eye size={17} />}
                 <span>{showPasswords ? "Ẩn mật khẩu" : "Hiện mật khẩu"}</span>
@@ -2378,6 +2438,16 @@ export function InstructorView({ students, rosters, studentResults, decks = [], 
           </div>
         )}
       </section>
+
+      <MostMissedWordsModal
+        isOpen={isMissedWordsOpen}
+        onClose={() => setIsMissedWordsOpen(false)}
+        decks={decks}
+        students={students}
+        studentResults={studentResults}
+        initialDeckId=""
+        initialClass={selectedClassTab}
+      />
     </div>
   );
 }
@@ -3040,6 +3110,7 @@ function HomeView({
   isUpdatingMaxAttempts,
   isUpdatingTimeLimit,
   isUpdatingExamMode,
+  isUpdatingShuffle,
   isDeletingDeck,
   importProgress,
   onPickPdf,
@@ -3050,6 +3121,7 @@ function HomeView({
   onMaxAttemptsChange,
   onTimeLimitChange,
   onExamModeChange,
+  onShuffleChange,
   onDeleteDeck,
   onEditDeck,
   onFlashcard,
@@ -3198,6 +3270,14 @@ function HomeView({
                   timeLimitMinutes={deck.timeLimitMinutes}
                   onChange={(val) => onTimeLimitChange(deck.id, val)}
                   disabled={isUpdatingTimeLimit}
+                />
+              </section>
+
+              <section className="assignment-panel">
+                <DeckShuffleSettings
+                  shuffleQuestions={deck.shuffleQuestions}
+                  onChange={(val) => onShuffleChange && onShuffleChange(deck.id, val)}
+                  disabled={isUpdatingShuffle}
                 />
               </section>
 
@@ -3377,6 +3457,11 @@ function ImportView({ draft, availableClasses = [], isSaving, connection, onBack
 
 function StudyView({ study, currentWord, quizChoices, typingInputRef, isFullscreen, onBack, onFullscreen, onAnswer, onInput, onTypingSubmit, onTimeUp }) {
   const [secondsLeft, setSecondsLeft] = useState(study.timeLimitSeconds || null);
+  const [showMeaningHint, setShowMeaningHint] = useState(false);
+
+  useEffect(() => {
+    setShowMeaningHint(false);
+  }, [study.index]);
 
   useEffect(() => {
     if (!study.timeLimitSeconds) return undefined;
@@ -3541,6 +3626,81 @@ function StudyView({ study, currentWord, quizChoices, typingInputRef, isFullscre
             })}
           </div>
           <p className="same-pos-note">Các đáp án nhiễu được chọn ngẫu nhiên từ cùng loại từ <b>{currentWord.partOfSpeech}</b>.</p>
+        </div>
+      )}
+
+      {study.mode === "listening" && (
+        <div className="exercise-card listening-card">
+          <div className="card-meta">
+            <span className="pos-chip">{POS_LABELS[currentWord.partOfSpeech]}</span>
+            <span>Luyện nghe phát âm & Gõ chính tả</span>
+            {study.wordMistakes === 1 && (
+              <span className="attempt-badge">⚠️ Sai lần 1 (−25% điểm câu này)</span>
+            )}
+            {study.wordMistakes === 2 && (
+              <span className="attempt-badge">⚠️ Sai lần 2 (−75% điểm câu này)</span>
+            )}
+          </div>
+
+          <div className="audio-control-cluster">
+            <button
+              type="button"
+              className="big-speaker-btn"
+              onClick={() => speakWord(currentWord.term, { rate: 0.9 })}
+              title="Bấm để nghe phát âm từ vựng chuẩn"
+            >
+              <Volume2 size={38} />
+              <span>Nghe phát âm chuẩn</span>
+            </button>
+            <div className="audio-sub-actions">
+              <button
+                type="button"
+                className="slow-speaker-btn"
+                onClick={() => speakWord(currentWord.term, { rate: 0.72 })}
+                title="Bấm để nghe chậm hơn (tốc độ 0.75x)"
+              >
+                <Volume2 size={16} />
+                <span>Nghe chậm (0.75x)</span>
+              </button>
+              <button
+                type="button"
+                className={`hint-toggle-btn ${showMeaningHint ? "active" : ""}`}
+                onClick={() => setShowMeaningHint((prev) => !prev)}
+                title="Bấm để xem hoặc ẩn gợi ý nghĩa tiếng Việt"
+              >
+                <span>{showMeaningHint ? "Ẩn gợi ý nghĩa" : "Xem gợi ý nghĩa"}</span>
+              </button>
+            </div>
+          </div>
+
+          {showMeaningHint && (
+            <div className="listening-hint-box">
+              <span className="hint-label">Gợi ý nghĩa:</span>
+              <strong>{currentWord.meaning}</strong>
+            </div>
+          )}
+
+          <form className="typing-form" onSubmit={onTypingSubmit}>
+            <input
+              ref={typingInputRef}
+              value={study.input}
+              onChange={(event) => onInput(event.target.value)}
+              placeholder="Nghe và gõ lại từ tiếng Anh…"
+              autoComplete="off"
+              spellCheck="false"
+              disabled={Boolean(study.feedback === "correct" || study.feedback === "wrong-final")}
+              aria-label="Nghe và gõ lại từ tiếng Anh"
+            />
+            <button type="submit" disabled={!study.input.trim() || Boolean(study.feedback)}>Kiểm tra <kbd>Enter</kbd></button>
+          </form>
+          {study.feedback === "wrong-final" && (
+            <div className="correct-answer">
+              <span>Đáp án đúng: <strong>{currentWord.term}</strong> ({currentWord.meaning})</span>
+              <button type="button" className="speak-answer-btn" onClick={() => speakWord(currentWord.term)} title="Nghe phát âm">
+                <Volume2 size={16} />
+              </button>
+            </div>
+          )}
         </div>
       )}
 

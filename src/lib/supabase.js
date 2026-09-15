@@ -252,20 +252,30 @@ export async function loadStudentResults() {
   const user = await requireUser();
   let { data, error } = await supabase
     .from("study_sessions")
-    .select("id,owner_id,deck_id,mode,score,correct_count,total_count,completed,violation_reason,created_at,decks(title)")
+    .select("id,owner_id,deck_id,mode,score,correct_count,total_count,completed,violation_reason,mistake_words,created_at,decks(title)")
     .neq("owner_id", user.id)
     .order("created_at", { ascending: false })
     .limit(500);
 
-  if (error && error.message?.includes("violation_reason")) {
+  if (error && (error.message?.includes("mistake_words") || error.message?.includes("violation_reason"))) {
     const fallback = await supabase
       .from("study_sessions")
-      .select("id,owner_id,deck_id,mode,score,correct_count,total_count,completed,created_at,decks(title)")
+      .select("id,owner_id,deck_id,mode,score,correct_count,total_count,completed,violation_reason,created_at,decks(title)")
       .neq("owner_id", user.id)
       .order("created_at", { ascending: false })
       .limit(500);
-    if (fallback.error) throw fallback.error;
-    data = fallback.data;
+    if (!fallback.error) {
+      data = fallback.data;
+    } else {
+      const basic = await supabase
+        .from("study_sessions")
+        .select("id,owner_id,deck_id,mode,score,correct_count,total_count,completed,created_at,decks(title)")
+        .neq("owner_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(500);
+      if (basic.error) throw basic.error;
+      data = basic.data;
+    }
   } else if (error) {
     throw error;
   }
@@ -281,6 +291,7 @@ export async function loadStudentResults() {
     total: session.total_count,
     completed: session.completed,
     violationReason: session.violation_reason,
+    mistakeWords: Array.isArray(session.mistake_words) ? session.mistake_words : [],
     completedAt: session.created_at,
   }));
 }
@@ -365,6 +376,13 @@ export async function loadLibrary() {
       isExamMode: deck.is_exam_mode ?? (() => {
         if (typeof localStorage !== "undefined") {
           const raw = localStorage.getItem(`vocab_deck_exam_mode_${deck.id}`);
+          if (raw !== null) return raw === "true";
+        }
+        return true;
+      })(),
+      shuffleQuestions: deck.shuffle_questions ?? (() => {
+        if (typeof localStorage !== "undefined") {
+          const raw = localStorage.getItem(`vocab_deck_shuffle_${deck.id}`);
           if (raw !== null) return raw === "true";
         }
         return true;
@@ -469,12 +487,33 @@ export async function createDeck({ title, sourceFileName, practiceMode, words, u
 
 export async function updateDeckPracticeMode(deckId, practiceMode) {
   await requireUser();
-  if (!["typing", "quiz"].includes(practiceMode)) throw new Error("Thể loại làm bài không hợp lệ.");
+  if (!["typing", "quiz", "listening"].includes(practiceMode)) throw new Error("Thể loại làm bài không hợp lệ.");
   const { error } = await supabase
     .from("decks")
     .update({ practice_mode: practiceMode })
     .eq("id", deckId);
   if (error) throw error;
+}
+
+export async function updateDeckShuffle(deckId, shuffleQuestions) {
+  if (typeof localStorage !== "undefined") {
+    localStorage.setItem(`vocab_deck_shuffle_${deckId}`, String(shuffleQuestions));
+  }
+  if (!supabase || deckId === "demo") return;
+  try {
+    await requireUser();
+    const { error } = await supabase
+      .from("decks")
+      .update({ shuffle_questions: shuffleQuestions })
+      .eq("id", deckId);
+    if (error && error.message?.includes("shuffle_questions")) {
+      console.warn("Column shuffle_questions not yet in decks table. Saved to localStorage.");
+      return;
+    }
+    if (error) throw error;
+  } catch (err) {
+    console.warn("Could not sync shuffle_questions with Supabase:", err);
+  }
 }
 
 export async function updateDeckClassAccess(deckId, unlockedClasses) {
@@ -645,7 +684,7 @@ export async function deleteDeck(deckId) {
   if (error) throw error;
 }
 
-export async function saveStudySession({ deckId, mode, score, correct, total, completed, violationReason = null }) {
+export async function saveStudySession({ deckId, mode, score, correct, total, completed, violationReason = null, mistakeWords = [] }) {
   if (!supabase || deckId === "demo") return;
   const user = await requireUser();
   const payload = {
@@ -660,10 +699,17 @@ export async function saveStudySession({ deckId, mode, score, correct, total, co
   if (violationReason) {
     payload.violation_reason = violationReason;
   }
+  if (Array.isArray(mistakeWords) && mistakeWords.length > 0) {
+    payload.mistake_words = mistakeWords;
+  }
   let { error } = await supabase.from("study_sessions").insert(payload);
-  if (error && error.message?.includes("violation_reason")) {
-    delete payload.violation_reason;
-    const retry = await supabase.from("study_sessions").insert(payload);
+  if (error && (error.message?.includes("mistake_words") || error.message?.includes("violation_reason"))) {
+    delete payload.mistake_words;
+    let retry = await supabase.from("study_sessions").insert(payload);
+    if (retry.error && retry.error.message?.includes("violation_reason")) {
+      delete payload.violation_reason;
+      retry = await supabase.from("study_sessions").insert(payload);
+    }
     if (retry.error) throw retry.error;
     return;
   }
