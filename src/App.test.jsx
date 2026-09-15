@@ -27,6 +27,7 @@ import {
   getRosterDisplayLabel,
   getDeckStudentAttempts,
   isDeckAttemptsExhausted,
+  InstructorView,
 } from "./App";
 
 test("App renders without crashing", () => {
@@ -399,6 +400,64 @@ test("buildRosterCredentialsXlsx includes both initial and current password colu
 
   // If mock zipSync or base64 fails in pure node, function signature still holds
   expect(typeof buildRosterCredentialsXlsx).toBe("function");
+});
+
+test("InstructorView renders separate columns for old password and new password", () => {
+  const students = [
+    {
+      id: "st-1",
+      displayName: "Nguyễn Văn A",
+      username: "12a1-abc123",
+      initialPassword: "InitialPass123",
+      currentPassword: "CustomPass456",
+      hasChangedPassword: true,
+      className: "12A1",
+      rosterId: "r1",
+      rosterRow: 2,
+    },
+    {
+      id: "st-2",
+      displayName: "Trần Thị B",
+      username: "12a1-xyz789",
+      initialPassword: "InitialPass999",
+      currentPassword: null,
+      hasChangedPassword: false,
+      className: "12A1",
+      rosterId: "r1",
+      rosterRow: 3,
+    },
+  ];
+
+  const html = renderToString(
+    <InstructorView
+      students={students}
+      rosters={[{ id: "r1", originalFileName: "12A1.xlsx", className: "12A1" }]}
+      studentResults={[]}
+      decks={[{ id: "deck-1", title: "Unit 1: Environment" }]}
+      generatedAccounts={[]}
+      isGenerating={false}
+      isRefreshingResults={false}
+      isExportingResults={false}
+      isResettingPasswords={false}
+      isDeletingRoster={false}
+      isDemo={false}
+      onGenerate={() => {}}
+      onExport={() => {}}
+      onExportResults={() => {}}
+      onRefreshResults={() => {}}
+      onResetPasswords={() => {}}
+      onDeleteRoster={() => {}}
+      onViewStudentProgress={() => {}}
+    />
+  );
+
+  // Table header must have separate columns for old and new passwords
+  expect(html).toContain("<th>Mật khẩu cũ</th>");
+  expect(html).toContain("<th>Mật khẩu mới</th>");
+  expect(html).not.toContain("Mật khẩu (Mới / Cũ)");
+
+  // Student 2 hasn't changed password, shows "Chưa đổi" badge
+  expect(html).toContain("Chưa đổi");
 });
 
 

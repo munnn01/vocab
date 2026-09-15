@@ -4078,8 +4078,38 @@ kbd { margin-left: 6px; padding: 3px 6px; border: 1px solid rgba(255,255,255,.14
 }
 
 /* ==========================================================================
-   PASSWORD DUAL CELL (STUDENT DIRECTORY TABLE)
+   PASSWORD DUAL / INDIVIDUAL CELLS (STUDENT DIRECTORY TABLE)
    ========================================================================== */
+.pwd-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.pwd-cell code {
+  font-size: 0.82rem;
+  letter-spacing: 0.03em;
+}
+
+.pwd-cell.new-pwd code {
+  color: #1e6b22;
+  font-weight: 750;
+  background: rgba(46, 125, 50, 0.08);
+  border: 1px solid rgba(46, 125, 50, 0.25);
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+.pwd-cell.old-pwd code {
+  color: #6b533a;
+  background: rgba(139, 115, 85, 0.06);
+  border: 1px solid rgba(139, 115, 85, 0.2);
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
 .password-dual-cell {
   display: flex;
   flex-direction: column;

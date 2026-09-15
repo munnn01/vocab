@@ -1173,23 +1173,16 @@ export function App() {
         type: "number",
       }));
 
-      const exportColumns = [
-        ...deckColumns,
-        { key: "practiceCount", header: "Số lần luyện", width: 14, type: "number" },
-        { key: "issue", header: "Lỗi trong quá trình làm bài", width: 30 },
+      // Khi in ra file điểm chỉ có tên, lớp, và điểm các chương
+      const exportColumns = deckColumns.length > 0 ? [...deckColumns] : [
+        { key: "score", header: "Điểm", width: 12, type: "number" },
       ];
 
       const resultRows = students
         .filter((student) => student.rosterId === rosterId && student.rosterRow)
         .map((student) => {
-          const result = latestByStudent.get(student.id);
-          const issue = result ? formatViolationText(result) : "Chưa làm";
-          const count = practiceCountByStudent.get(student.id) || 0;
-
           const rowData = {
             rowNumber: student.rosterRow,
-            practiceCount: count,
-            issue,
           };
 
           // Ở dưới là số điểm của từng học sinh tương ứng với mỗi bài
@@ -1205,7 +1198,7 @@ export function App() {
 
       if (!resultRows.length) throw new Error("Không tìm thấy học sinh thuộc danh sách này.");
       downloadRosterResultsXlsx(workbook, resultRows, exportColumns);
-      showToast("Đã xuất file kết quả với cột điểm cho từng bài từ vựng và số lần luyện.");
+      showToast("Đã xuất file bảng điểm (Họ và tên, Lớp, Điểm các chương).");
     } catch (error) {
       console.error("Không thể xuất kết quả vào file gốc", error);
       showToast(error.message || "Chưa xuất được file kết quả.");
@@ -1787,7 +1780,7 @@ function LoginView({ onLogin }) {
   );
 }
 
-function InstructorView({ students, rosters, studentResults, decks = [], generatedAccounts, isGenerating, isRefreshingResults, isExportingResults, isResettingPasswords, isDeletingRoster, isDemo, onGenerate, onExport, onExportResults, onRefreshResults, onResetPasswords, onDeleteRoster, onViewStudentProgress }) {
+export function InstructorView({ students, rosters, studentResults, decks = [], generatedAccounts, isGenerating, isRefreshingResults, isExportingResults, isResettingPasswords, isDeletingRoster, isDemo, onGenerate, onExport, onExportResults, onRefreshResults, onResetPasswords, onDeleteRoster, onViewStudentProgress }) {
   const rosterInputRef = useRef(null);
   const [rosterDraft, setRosterDraft] = useState(null);
   const [classNameInput, setClassNameInput] = useState("");
@@ -2135,10 +2128,10 @@ function InstructorView({ students, rosters, studentResults, decks = [], generat
                   onExportResults(selectedRosterId);
                 }}
                 disabled={!selectedRosterId || isExportingResults}
-                title={!selectedRosterId ? "Vui lòng chọn file trong ô 'Danh sách'" : "Xuất kết quả của file đã chọn"}
+                title={!selectedRosterId ? "Vui lòng chọn file trong ô 'Danh sách'" : "Xuất file điểm chỉ gồm họ tên, lớp và điểm các chương"}
               >
                 {isExportingResults ? <LoaderCircle className="spin" size={17} /> : <Download size={17} />}
-                <span>{isExportingResults ? "Đang xuất…" : "Xuất kết quả"}</span>
+                <span>{isExportingResults ? "Đang xuất…" : "Xuất file điểm"}</span>
               </button>
               {selectedRosterId && (
                 <button
@@ -2238,7 +2231,8 @@ function InstructorView({ students, rosters, studentResults, decks = [], generat
                   <tr>
                     <th>Học sinh</th>
                     <th>Tên đăng nhập</th>
-                    <th>Mật khẩu (Mới / Cũ)</th>
+                    <th>Mật khẩu cũ</th>
+                    <th>Mật khẩu mới</th>
                     <th>Lớp</th>
                     {sortedDecks.map((deck) => (
                       <th key={deck.id} title={`Điểm bài: ${deck.title}`}>
@@ -2271,25 +2265,23 @@ function InstructorView({ students, rosters, studentResults, decks = [], generat
                       <td>{student.displayName}</td>
                       <td><code>{student.username}</code></td>
                       <td>
-                        <div className="password-dual-cell">
-                          <div className="pwd-line new-pwd">
-                            <span className="pwd-tag">Mới:</span>
-                            {hasChanged ? (
-                              <code>{showPasswords ? currentPassword : "••••••••••"}</code>
-                            ) : (
-                              <span className="pwd-badge unshifted" title="Học sinh chưa đổi mật khẩu lần đầu (đang dùng mật khẩu 1 lần)">
-                                Chưa đổi
-                              </span>
-                            )}
-                          </div>
-                          <div className="pwd-line old-pwd">
-                            <span className="pwd-tag">Cũ:</span>
-                            {rawPassword ? (
-                              <code>{showPasswords ? rawPassword : "••••••••••"}</code>
-                            ) : (
-                              <span className="no-result" title="Mật khẩu tạo ở đợt trước khi có tính năng lưu. Bấm 'Cấp lại MK' ở trên để tạo mật khẩu mới.">Chưa lưu</span>
-                            )}
-                          </div>
+                        <div className="pwd-cell old-pwd">
+                          {rawPassword ? (
+                            <code>{showPasswords ? rawPassword : "••••••••••"}</code>
+                          ) : (
+                            <span className="no-result" title="Mật khẩu tạo ở đợt trước khi có tính năng lưu. Bấm 'Cấp lại MK' ở trên để tạo mật khẩu mới.">Chưa lưu</span>
+                          )}
+                        </div>
+                      </td>
+                      <td>
+                        <div className="pwd-cell new-pwd">
+                          {hasChanged ? (
+                            <code>{showPasswords ? currentPassword : "••••••••••"}</code>
+                          ) : (
+                            <span className="pwd-badge unshifted" title="Học sinh chưa đổi mật khẩu lần đầu (đang dùng mật khẩu 1 lần)">
+                              Chưa đổi
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td><span className="class-name-tag">{student.className}</span></td>
