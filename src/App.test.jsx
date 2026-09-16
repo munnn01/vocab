@@ -722,10 +722,74 @@ test("vercel.json configures essential HTTP security headers", async () => {
   expect(headerKeys).toContain("Permissions-Policy");
   expect(headerKeys).toContain("Strict-Transport-Security");
   expect(headerKeys).toContain("X-XSS-Protection");
+  expect(headerKeys).toContain("Content-Security-Policy");
 
   const xFrame = rootHeaders.headers.find((h) => h.key === "X-Frame-Options");
   expect(xFrame.value).toBe("DENY");
+
+  const csp = rootHeaders.headers.find((h) => h.key === "Content-Security-Policy");
+  expect(csp.value).toContain("default-src 'self'");
+  expect(csp.value).toContain("connect-src 'self' https://*.supabase.co wss://*.supabase.co");
+  expect(csp.value).toContain("style-src 'self' 'unsafe-inline' https://fonts.googleapis.com");
+  expect(csp.value).toContain("font-src 'self' https://fonts.gstatic.com data:");
 });
+
+test("formatViolationText handles window_blur violation reason correctly", () => {
+  const text = formatViolationText({ violationReason: "window_blur" });
+  expect(text).toContain("Mất tiêu điểm cửa sổ thi");
+  expect(text).toContain("Trừ 25% điểm");
+});
+
+test("StudyView applies is-exam-lockdown class during exam mode to disable text copying", () => {
+  const word = { id: "w1", term: "test", meaning: "kiểm tra", partOfSpeech: "n" };
+  const studyExam = {
+    deckId: "d1",
+    deckTitle: "Bài thi",
+    items: [word],
+    index: 0,
+    mode: "typing",
+    score: 0,
+    input: "",
+    isExamMode: true,
+  };
+  const htmlExam = renderToString(
+    <StudyView
+      study={studyExam}
+      currentWord={word}
+      quizChoices={[]}
+      wordFamilyChoices={[]}
+      typingInputRef={{ current: null }}
+      isFullscreen={true}
+      onBack={() => {}}
+      onFullscreen={() => {}}
+      onAnswer={() => {}}
+      onInput={() => {}}
+      onTypingSubmit={() => {}}
+      onTimeUp={() => {}}
+    />
+  );
+  expect(htmlExam).toContain("is-exam-lockdown");
+
+  const studyPractice = { ...studyExam, isExamMode: false };
+  const htmlPractice = renderToString(
+    <StudyView
+      study={studyPractice}
+      currentWord={word}
+      quizChoices={[]}
+      wordFamilyChoices={[]}
+      typingInputRef={{ current: null }}
+      isFullscreen={false}
+      onBack={() => {}}
+      onFullscreen={() => {}}
+      onAnswer={() => {}}
+      onInput={() => {}}
+      onTypingSubmit={() => {}}
+      onTimeUp={() => {}}
+    />
+  );
+  expect(htmlPractice).not.toContain("is-exam-lockdown");
+});
+
 
 
 

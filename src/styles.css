@@ -4839,6 +4839,25 @@ kbd { margin-left: 6px; padding: 3px 6px; border: 1px solid rgba(255,255,255,.14
   align-items: center;
 }
 
+/* ==========================================================================
+   EXAM MODE LOCKDOWN & ANTI-CHEATING STYLES
+   ========================================================================== */
+.study-view.is-exam-lockdown {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+.study-view.is-exam-lockdown input,
+.study-view.is-exam-lockdown textarea {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+}
+
+
 
 
 

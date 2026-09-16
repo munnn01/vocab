@@ -128,6 +128,9 @@ export function formatViolationText(result) {
     if (vr === "visibility_hidden") {
       return "Vi phạm lần 1: Chuyển ứng dụng / tab (Trừ 25% điểm)";
     }
+    if (vr === "window_blur") {
+      return "Vi phạm lần 1: Mất tiêu điểm cửa sổ thi / Click ra ngoài (Trừ 25% điểm)";
+    }
     if (vr === "left_early") {
       return "Rời bài thi sớm (Phạm lỗi lần 1: Trừ 25% điểm)";
     }
@@ -651,7 +654,12 @@ export function App() {
       if (suppressFullscreenPenaltyRef.current) return;
       fullscreenSeenRef.current = false;
       const nextViolation = (study.violationCount || 0) + 1;
-      const typeLabel = type === "fullscreen_exit" ? "Thoát toàn màn hình" : "Chuyển ứng dụng / tab";
+      const typeLabel =
+        type === "fullscreen_exit"
+          ? "Thoát toàn màn hình"
+          : type === "window_blur"
+          ? "Mất tiêu điểm / Bấm ra ngoài cửa sổ thi"
+          : "Chuyển ứng dụng / tab";
       if (nextViolation === 1) {
         const penalty = Math.max(2, Math.round(study.score * 0.25));
         const newScore = Math.max(0, study.score - penalty);
@@ -688,13 +696,72 @@ export function App() {
       }
     };
 
+    let blurTimer = null;
+    const handleWindowBlur = () => {
+      window.clearTimeout(blurTimer);
+      blurTimer = window.setTimeout(() => {
+        if (suppressFullscreenPenaltyRef.current) return;
+        if (typeof document !== "undefined" && !document.hasFocus()) {
+          penalizeViolation("window_blur");
+        }
+      }, 250);
+    };
+
     document.addEventListener("fullscreenchange", penalizeFullscreenExit);
     document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("blur", handleWindowBlur);
     return () => {
+      window.clearTimeout(blurTimer);
       document.removeEventListener("fullscreenchange", penalizeFullscreenExit);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("blur", handleWindowBlur);
     };
   }, [account?.role, finishStudy, showToast, study, view]);
+
+  useEffect(() => {
+    if (view !== "study" || !study || study.isExamMode === false) return undefined;
+
+    const handleExamKeyDown = (event) => {
+      const isF12 = event.key === "F12" || event.keyCode === 123;
+      const isDevToolsCombo =
+        (event.ctrlKey || event.metaKey) &&
+        event.shiftKey &&
+        ["I", "J", "C", "i", "j", "c"].includes(event.key);
+      const isViewSource =
+        (event.ctrlKey || event.metaKey) && ["u", "U"].includes(event.key);
+
+      if (isF12 || isDevToolsCombo || isViewSource) {
+        event.preventDefault();
+        event.stopPropagation();
+        showToast("⛔ Phím tắt kiểm tra mã nguồn (DevTools) bị vô hiệu hóa trong giờ thi!");
+        return false;
+      }
+    };
+
+    const handleContextMenu = (event) => {
+      event.preventDefault();
+      showToast("⛔ Thao tác chuột phải bị khóa trong giờ thi!");
+      return false;
+    };
+
+    const handleCopyCut = (event) => {
+      event.preventDefault();
+      showToast("⛔ Không được phép sao chép nội dung bài thi!");
+      return false;
+    };
+
+    window.addEventListener("keydown", handleExamKeyDown, true);
+    window.addEventListener("contextmenu", handleContextMenu, true);
+    document.addEventListener("copy", handleCopyCut, true);
+    document.addEventListener("cut", handleCopyCut, true);
+
+    return () => {
+      window.removeEventListener("keydown", handleExamKeyDown, true);
+      window.removeEventListener("contextmenu", handleContextMenu, true);
+      document.removeEventListener("copy", handleCopyCut, true);
+      document.removeEventListener("cut", handleCopyCut, true);
+    };
+  }, [showToast, study, view]);
 
   const answerCurrent = useCallback((isCorrect, chosenChoice = null) => {
     if (!study || (study.feedback && study.feedback === "correct")) return;
@@ -3517,7 +3584,7 @@ export function StudyView({ study, currentWord, quizChoices, wordFamilyChoices, 
   const AssignedIcon = assignedMode.icon;
 
   return (
-    <div className={`study-view ${resultClass}`}>
+    <div className={`study-view ${resultClass} ${study.isExamMode !== false ? "is-exam-lockdown" : ""}`}>
       <div className="study-head">
         <button className="back-link" type="button" onClick={onBack}><ArrowLeft size={18} /> Rời phiên</button>
         <div className="study-title">
@@ -3595,7 +3662,7 @@ export function StudyView({ study, currentWord, quizChoices, wordFamilyChoices, 
               disabled={Boolean(study.feedback === "correct" || study.feedback === "wrong-final")}
               aria-label="Nhập từ tiếng Anh"
             />
-            <button type="submit" disabled={!study.input.trim() || Boolean(study.feedback)}>Kiểm tra <kbd>Enter</kbd></button>
+            <button type="submit" disabled={!study.input?.trim() || Boolean(study.feedback)}>Kiểm tra <kbd>Enter</kbd></button>
           </form>
           {study.feedback === "wrong-final" && (
             <div className="correct-answer">
@@ -3716,7 +3783,7 @@ export function StudyView({ study, currentWord, quizChoices, wordFamilyChoices, 
               disabled={Boolean(study.feedback === "correct" || study.feedback === "wrong-final")}
               aria-label="Nghe và gõ lại từ tiếng Anh"
             />
-            <button type="submit" disabled={!study.input.trim() || Boolean(study.feedback)}>Kiểm tra <kbd>Enter</kbd></button>
+            <button type="submit" disabled={!study.input?.trim() || Boolean(study.feedback)}>Kiểm tra <kbd>Enter</kbd></button>
           </form>
           {study.feedback === "wrong-final" && (
             <div className="correct-answer">
