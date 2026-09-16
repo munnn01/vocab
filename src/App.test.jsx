@@ -708,6 +708,26 @@ test("StudyView correctly renders listening_pos interface with replay limit badg
   expect(html).toContain("family-choice-btn");
 });
 
+test("vercel.json configures essential HTTP security headers", async () => {
+  const fs = await import("node:fs");
+  const raw = fs.readFileSync("vercel.json", "utf-8");
+  const config = JSON.parse(raw);
+  expect(config.headers).toBeDefined();
+  const rootHeaders = config.headers.find((h) => h.source === "/(.*)");
+  expect(rootHeaders).toBeDefined();
+  const headerKeys = rootHeaders.headers.map((h) => h.key);
+  expect(headerKeys).toContain("X-Frame-Options");
+  expect(headerKeys).toContain("X-Content-Type-Options");
+  expect(headerKeys).toContain("Referrer-Policy");
+  expect(headerKeys).toContain("Permissions-Policy");
+  expect(headerKeys).toContain("Strict-Transport-Security");
+  expect(headerKeys).toContain("X-XSS-Protection");
+
+  const xFrame = rootHeaders.headers.find((h) => h.key === "X-Frame-Options");
+  expect(xFrame.value).toBe("DENY");
+});
+
+
 
 
 
