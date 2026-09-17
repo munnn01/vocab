@@ -1134,27 +1134,30 @@ export function App() {
 
   async function confirmDeleteDeck() {
     if (!deckToDelete || deckToDelete.isDemo) return;
-    setIsDeletingDeck(true);
+    const target = deckToDelete;
+    const previousDecks = decks;
+    const remainingDecks = decks.filter((d) => d.id !== target.id);
+
+    // Cập nhật giao diện ngay lập tức (Optimistic UI) giúp thao tác xóa phản hồi tức thì
+    setDecks(remainingDecks);
+    if (selectedDeckId === target.id) {
+      setSelectedDeckId(remainingDecks[0]?.id || "demo");
+    }
+    if (view === "study" && study?.deckId === target.id) {
+      setStudy(null);
+      setView(canManage ? "create-deck" : "deck");
+    }
+    setDeckToDelete(null);
+    showToast(`Đã xóa bộ từ "${target.title}".`);
+
     try {
-      if (isSupabaseConfigured && !deckToDelete.isTemporary && connection === "connected") {
-        await deleteDeck(deckToDelete.id);
+      if (isSupabaseConfigured && !target.isTemporary && connection === "connected") {
+        await deleteDeck(target.id);
       }
-      const remainingDecks = decks.filter((d) => d.id !== deckToDelete.id);
-      setDecks(remainingDecks);
-      if (selectedDeckId === deckToDelete.id) {
-        setSelectedDeckId(remainingDecks[0]?.id || "demo");
-      }
-      if (view === "study" && study?.deckId === deckToDelete.id) {
-        setStudy(null);
-        setView(canManage ? "create-deck" : "deck");
-      }
-      showToast(`Đã xóa bộ từ "${deckToDelete.title}".`);
-      setDeckToDelete(null);
     } catch (error) {
       console.error("Không thể xóa bộ từ", error);
-      showToast(error.message || "Chưa xóa được bộ từ. Vui lòng thử lại.");
-    } finally {
-      setIsDeletingDeck(false);
+      setDecks(previousDecks);
+      showToast(error.message || `Chưa xóa được bộ từ "${target.title}". Đã khôi phục.`);
     }
   }
 
@@ -1367,15 +1370,20 @@ export function App() {
 
   async function handleDeleteRoster(rosterId) {
     if (!window.confirm("Bạn có chắc chắn muốn xóa file danh sách này khỏi hệ thống?")) return;
+    const previousRosters = rosters;
+    const previousStudents = students;
+    // Cập nhật giao diện ngay lập tức (Optimistic UI) giúp file danh sách biến mất tức thì
+    setRosters((current) => current.filter((r) => r.id !== rosterId));
+    setStudents((current) => current.filter((s) => s.rosterId !== rosterId));
     setIsDeletingRoster(true);
     try {
       await deleteRoster(rosterId);
-      setRosters((current) => current.filter((r) => r.id !== rosterId));
-      setStudents((current) => current.filter((s) => s.rosterId !== rosterId));
       showToast("Đã xóa file danh sách thành công.");
     } catch (error) {
       console.error("Không thể xóa file danh sách", error);
-      showToast(error.message || "Chưa xóa được file danh sách. Vui lòng thử lại.");
+      setRosters(previousRosters);
+      setStudents(previousStudents);
+      showToast(error.message || "Chưa xóa được file danh sách. Đã khôi phục.");
     } finally {
       setIsDeletingRoster(false);
     }
