@@ -380,16 +380,16 @@ function appendColumnsToWorkbook({ originalFileBase64, worksheetPath, headerRow,
 export function buildRosterCredentialsXlsx(workbook, accounts) {
   return appendColumnsToWorkbook({
     ...workbook,
-    rows: accounts.map((account) => ({
-      rowNumber: account.rosterRow,
+    rows: accounts.map((account, index) => ({
+      rowNumber: account.rosterRow || (workbook.headerRow ? workbook.headerRow + index + 1 : index + 2),
       username: account.username,
-      password: account.password || account.initialPassword,
+      password: account.initialPassword || account.password || "(Chưa lưu)",
       currentPassword: account.hasChangedPassword && account.currentPassword ? account.currentPassword : "(Chưa đổi)",
     })),
     columns: [
       { key: "username", header: "Tên đăng nhập", width: 24 },
-      { key: "password", header: "Mật khẩu ban đầu (1 lần)", width: 22 },
-      { key: "currentPassword", header: "Mật khẩu hiện tại (học sinh đổi)", width: 26 },
+      { key: "password", header: "Mật khẩu cũ", width: 22 },
+      { key: "currentPassword", header: "Mật khẩu mới", width: 24 },
     ],
   });
 }
@@ -424,6 +424,10 @@ function outputFileName(originalFileName, suffix) {
 
 export function downloadRosterCredentialsXlsx(workbook, accounts) {
   downloadBytes(buildRosterCredentialsXlsx(workbook, accounts), outputFileName(workbook.originalFileName, "tai-khoan"));
+}
+
+export function downloadRosterOldPasswordsXlsx(workbook, accounts) {
+  downloadBytes(buildRosterCredentialsXlsx(workbook, accounts), outputFileName(workbook.originalFileName, "mat-khau-cu"));
 }
 
 export function downloadRosterResultsXlsx(workbook, resultRows, columns = null) {

@@ -355,7 +355,7 @@ test("DeckExamModeSettings and DeckTimeLimitSettings render mode options", () =>
 });
 
 import { FirstLoginPasswordModal } from "./components/FirstLoginPasswordModal";
-import { buildRosterCredentialsXlsx } from "./lib/studentAccounts";
+import { buildRosterCredentialsXlsx, downloadRosterOldPasswordsXlsx } from "./lib/studentAccounts";
 import { changeStudentPassword } from "./lib/supabase";
 
 test("FirstLoginPasswordModal renders mandatory password reset fields", () => {
@@ -404,8 +404,8 @@ test("buildRosterCredentialsXlsx includes both initial and current password colu
     { rosterRow: 3, username: "hs2", initialPassword: "OldPass2", currentPassword: null, hasChangedPassword: false },
   ];
 
-  // If mock zipSync or base64 fails in pure node, function signature still holds
   expect(typeof buildRosterCredentialsXlsx).toBe("function");
+  expect(typeof downloadRosterOldPasswordsXlsx).toBe("function");
 });
 
 test("InstructorView renders separate columns for old password and new password", () => {

@@ -1463,6 +1463,18 @@ kbd { margin-left: 6px; padding: 3px 6px; border: 1px solid rgba(255,255,255,.14
   color: #0d47a1;
 }
 
+.result-tools .export-old-passwords-btn {
+  color: #2e7d32;
+  border-color: rgba(46, 125, 50, 0.35);
+  background: rgba(46, 125, 50, 0.04);
+}
+
+.result-tools .export-old-passwords-btn:hover:not(:disabled) {
+  background: rgba(46, 125, 50, 0.12);
+  border-color: #2e7d32;
+  color: #1b5e20;
+}
+
 /* ==========================================================================
    FULLSCREEN VIOLATION & ENFORCEMENT BANNER (STUDY VIEW)
    ========================================================================== */

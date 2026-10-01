@@ -16,7 +16,7 @@ import {
   updateDeckExamMode, updateDeckTimeLimit, updateDeckWords, updateDeckShuffle,
 } from "./lib/supabase";
 import {
-  createDemoStudentAccounts, downloadRosterCredentialsXlsx, downloadRosterResultsXlsx,
+  createDemoStudentAccounts, downloadRosterCredentialsXlsx, downloadRosterOldPasswordsXlsx, downloadRosterResultsXlsx,
   parseStudentRosterXlsx,
 } from "./lib/studentAccounts";
 import { BookBackground } from "./components/BookBackground";
@@ -209,6 +209,7 @@ export function App() {
   const [isGeneratingAccounts, setIsGeneratingAccounts] = useState(false);
   const [isRefreshingResults, setIsRefreshingResults] = useState(false);
   const [isExportingResults, setIsExportingResults] = useState(false);
+  const [isExportingOldPasswords, setIsExportingOldPasswords] = useState(false);
   const [isResettingPasswords, setIsResettingPasswords] = useState(false);
   const [isUpdatingMode, setIsUpdatingMode] = useState(false);
   const [isUpdatingAccess, setIsUpdatingAccess] = useState(false);
@@ -1350,6 +1351,33 @@ export function App() {
     }
   }
 
+  async function handleExportOldPasswords(rosterId) {
+    if (!rosterId) {
+      showToast("Hãy chọn danh sách cần xuất file mật khẩu cũ.");
+      return;
+    }
+    setIsExportingOldPasswords(true);
+    try {
+      const workbook = account.demo && generatedRoster?.id === rosterId
+        ? generatedRoster
+        : await loadRosterWorkbook(rosterId);
+
+      const rosterStudents = students.filter((s) => s.rosterId === rosterId);
+      if (!rosterStudents.length) {
+        showToast("Không tìm thấy học sinh nào trong danh sách này.");
+        return;
+      }
+
+      downloadRosterOldPasswordsXlsx(workbook, rosterStudents);
+      showToast("Đã xuất file danh sách kèm mật khẩu cũ thành công.");
+    } catch (error) {
+      console.error("Không thể xuất file mật khẩu cũ", error);
+      showToast(error.message || "Chưa xuất được file mật khẩu cũ. Vui lòng thử lại.");
+    } finally {
+      setIsExportingOldPasswords(false);
+    }
+  }
+
   async function handleRefreshStudentResults() {
     if (account.demo) {
       showToast("Bản xem thử chưa có điểm học sinh trên Supabase.");
@@ -1647,11 +1675,13 @@ export function App() {
               isGenerating={isGeneratingAccounts}
               isRefreshingResults={isRefreshingResults}
               isExportingResults={isExportingResults}
+              isExportingOldPasswords={isExportingOldPasswords}
               isResettingPasswords={isResettingPasswords}
               isDemo={Boolean(account.demo)}
               onGenerate={handleGenerateStudents}
               onExport={handleExportStudents}
               onExportResults={handleExportRosterResults}
+              onExportOldPasswords={handleExportOldPasswords}
               onRefreshResults={handleRefreshStudentResults}
               onResetPasswords={handleResetPasswords}
               isDeletingRoster={isDeletingRoster}
@@ -1931,7 +1961,7 @@ function LoginView({ onLogin }) {
   );
 }
 
-export function InstructorView({ students, rosters, studentResults, decks = [], generatedAccounts, isGenerating, isRefreshingResults, isExportingResults, isResettingPasswords, isDeletingRoster, isDemo, onGenerate, onExport, onExportResults, onRefreshResults, onResetPasswords, onDeleteRoster, onViewStudentProgress }) {
+export function InstructorView({ students, rosters, studentResults, decks = [], generatedAccounts, isGenerating, isRefreshingResults, isExportingResults, isExportingOldPasswords = false, isResettingPasswords, isDeletingRoster, isDemo, onGenerate, onExport, onExportResults, onExportOldPasswords = () => {}, onRefreshResults, onResetPasswords, onDeleteRoster, onViewStudentProgress }) {
   const rosterInputRef = useRef(null);
   const [rosterDraft, setRosterDraft] = useState(null);
   const [classNameInput, setClassNameInput] = useState("");
@@ -2286,22 +2316,40 @@ export function InstructorView({ students, rosters, studentResults, decks = [], 
                 <span>{isExportingResults ? "Đang xuất…" : "Xuất file điểm"}</span>
               </button>
               {selectedRosterId && (
-                <button
-                  className="secondary-button delete-roster-btn"
-                  type="button"
-                  onClick={async () => {
-                    const target = rosters.find((r) => r.id === selectedRosterId);
-                    if (target) {
-                      await onDeleteRoster(target.id);
-                      setSelectedRosterId("");
-                    }
-                  }}
-                  disabled={isDeletingRoster}
-                  title="Xóa file danh sách này khỏi hệ thống"
-                >
-                  {isDeletingRoster ? <LoaderCircle className="spin" size={17} /> : <Trash2 size={17} />}
-                  <span>Xóa file</span>
-                </button>
+                <>
+                  <button
+                    className="secondary-button export-old-passwords-btn"
+                    type="button"
+                    onClick={() => {
+                      if (!selectedRosterId) {
+                        setError("Vui lòng chọn một file trong ô 'Danh sách' trước khi xuất mật khẩu.");
+                        return;
+                      }
+                      onExportOldPasswords(selectedRosterId);
+                    }}
+                    disabled={!selectedRosterId || isExportingOldPasswords}
+                    title="Xuất file danh sách kèm tài khoản và mật khẩu cũ của học sinh"
+                  >
+                    {isExportingOldPasswords ? <LoaderCircle className="spin" size={17} /> : <KeyRound size={17} />}
+                    <span>{isExportingOldPasswords ? "Đang xuất…" : "Xuất file mật khẩu cũ"}</span>
+                  </button>
+                  <button
+                    className="secondary-button delete-roster-btn"
+                    type="button"
+                    onClick={async () => {
+                      const target = rosters.find((r) => r.id === selectedRosterId);
+                      if (target) {
+                        await onDeleteRoster(target.id);
+                        setSelectedRosterId("");
+                      }
+                    }}
+                    disabled={isDeletingRoster}
+                    title="Xóa file danh sách này khỏi hệ thống"
+                  >
+                    {isDeletingRoster ? <LoaderCircle className="spin" size={17} /> : <Trash2 size={17} />}
+                    <span>Xóa file</span>
+                  </button>
+                </>
               )}
             </div>
             <div className="tools-group action-tools-group">
