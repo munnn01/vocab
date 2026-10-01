@@ -2313,47 +2313,44 @@ export function InstructorView({ students, rosters, studentResults, decks = [], 
                   onExportResults(selectedRosterId);
                 }}
                 disabled={!selectedRosterId || isExportingResults}
-                title={!selectedRosterId ? "Vui lòng chọn file trong ô 'Danh sách'" : "Xuất file bảng điểm gồm họ tên, lớp, điểm các chương và điểm trung bình"}
+                title={!selectedRosterId ? "Vui lòng chọn file trong ô 'Danh sách' trước khi xuất kết quả" : "Xuất file bảng điểm gồm họ tên, lớp, điểm các chương và điểm trung bình"}
               >
                 {isExportingResults ? <LoaderCircle className="spin" size={17} /> : <Download size={17} />}
                 <span>{isExportingResults ? "Đang xuất…" : "Xuất file điểm"}</span>
               </button>
-              {selectedRosterId && (
-                <>
-                  <button
-                    className="secondary-button export-old-passwords-btn"
-                    type="button"
-                    onClick={() => {
-                      if (!selectedRosterId) {
-                        setError("Vui lòng chọn một file trong ô 'Danh sách' trước khi xuất mật khẩu.");
-                        return;
-                      }
-                      onExportOldPasswords(selectedRosterId);
-                    }}
-                    disabled={!selectedRosterId || isExportingOldPasswords}
-                    title="Xuất file danh sách kèm tài khoản và mật khẩu cũ của học sinh"
-                  >
-                    {isExportingOldPasswords ? <LoaderCircle className="spin" size={17} /> : <KeyRound size={17} />}
-                    <span>{isExportingOldPasswords ? "Đang xuất…" : "Xuất file mật khẩu cũ"}</span>
-                  </button>
-                  <button
-                    className="secondary-button delete-roster-btn"
-                    type="button"
-                    onClick={async () => {
-                      const target = rosters.find((r) => r.id === selectedRosterId);
-                      if (target) {
-                        await onDeleteRoster(target.id);
-                        setSelectedRosterId("");
-                      }
-                    }}
-                    disabled={isDeletingRoster}
-                    title="Xóa file danh sách này khỏi hệ thống"
-                  >
-                    {isDeletingRoster ? <LoaderCircle className="spin" size={17} /> : <Trash2 size={17} />}
-                    <span>Xóa file</span>
-                  </button>
-                </>
-              )}
+              <button
+                className="secondary-button export-old-passwords-btn"
+                type="button"
+                onClick={() => {
+                  if (!selectedRosterId) {
+                    setError("Vui lòng chọn một file trong ô 'Danh sách' trước khi xuất mật khẩu.");
+                    return;
+                  }
+                  onExportOldPasswords(selectedRosterId);
+                }}
+                disabled={!selectedRosterId || isExportingOldPasswords}
+                title={!selectedRosterId ? "Vui lòng chọn file trong ô 'Danh sách' trước khi xuất mật khẩu" : "Xuất file danh sách kèm tài khoản và mật khẩu cũ của học sinh"}
+              >
+                {isExportingOldPasswords ? <LoaderCircle className="spin" size={17} /> : <KeyRound size={17} />}
+                <span>{isExportingOldPasswords ? "Đang xuất…" : "Xuất file mật khẩu cũ"}</span>
+              </button>
+              <button
+                className="secondary-button delete-roster-btn"
+                type="button"
+                onClick={async () => {
+                  if (!selectedRosterId) return;
+                  const target = rosters.find((r) => r.id === selectedRosterId);
+                  if (target) {
+                    await onDeleteRoster(target.id);
+                    setSelectedRosterId("");
+                  }
+                }}
+                disabled={!selectedRosterId || isDeletingRoster}
+                title={!selectedRosterId ? "Vui lòng chọn file trong ô 'Danh sách' trước khi xóa file" : "Xóa file danh sách này khỏi hệ thống"}
+              >
+                {isDeletingRoster ? <LoaderCircle className="spin" size={17} /> : <Trash2 size={17} />}
+                <span>Xóa file</span>
+              </button>
             </div>
             <div className="tools-group action-tools-group">
               <button

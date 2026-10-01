@@ -1439,6 +1439,17 @@ kbd { margin-left: 6px; padding: 3px 6px; border: 1px solid rgba(255,255,255,.14
   box-shadow: 0 4px 12px rgba(139, 69, 19, 0.12);
 }
 
+.result-tools .secondary-button:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+  pointer-events: none;
+  filter: grayscale(0.6);
+  box-shadow: none;
+  border-color: rgba(139, 115, 85, 0.18);
+  background: rgba(139, 115, 85, 0.04);
+  color: #8b7355;
+}
+
 .result-tools .delete-roster-btn {
   color: #c0392b;
   border-color: rgba(192, 57, 43, 0.3);

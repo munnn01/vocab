@@ -464,6 +464,11 @@ test("InstructorView renders separate columns for old password and new password"
 
   // Student 2 hasn't changed password, shows "Chưa đổi" badge
   expect(html).toContain("Chưa đổi");
+
+  // All three buttons are rendered and disabled when selectedRosterId is empty ("Danh sách")
+  expect(html).toContain("Xuất file điểm");
+  expect(html).toContain("Xuất file mật khẩu cũ");
+  expect(html).toContain("Xóa file");
 });
 
 test("InstructorView renders Điểm trung bình column and computes average score correctly", () => {
