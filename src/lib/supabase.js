@@ -121,6 +121,21 @@ export async function signOut() {
   if (supabase) await supabase.auth.signOut();
 }
 
+export const LEGACY_INITIAL_PASSWORDS = {
+  "b1-gswdga": "gRGJbdKxE6",
+  "b1-dtgfbd": "XW4UGzWwGE",
+  "b1-z2gugp": "5qJE9fxPmA",
+  "b1-26nhcy": "jBa7FYfds6",
+  "b1-7zb36j": "aFxC9vPVEZ",
+  "b1-w7nk35": "xzNmxJsF4f",
+  "b1-xjtn52": "HdvEmhYVQ8",
+  "b1-tagv3h": "Mk5CPrAhuJ",
+  "b1-7x23ax": "PEqmch76hA",
+  "b1-rzmzqs": "vW5ZmbzKMJ",
+  "b1-fxkvd4": "saSs6VmsJ6",
+  "b1-uw7u6u": "qFpWXnrg4K",
+};
+
 export async function loadStudents() {
   const user = await requireUser();
   let { data, error } = await supabase
@@ -159,7 +174,7 @@ export async function loadStudents() {
     className: student.class_name,
     rosterId: student.roster_id,
     rosterRow: student.roster_row,
-    initialPassword: student.initial_password,
+    initialPassword: student.initial_password || LEGACY_INITIAL_PASSWORDS[student.username] || null,
     currentPassword: student.current_password,
     hasChangedPassword: Boolean(student.has_changed_password),
     createdAt: student.created_at,

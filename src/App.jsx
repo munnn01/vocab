@@ -10,7 +10,7 @@ import { DEMO_WORDS, POS_LABELS, makeQuizChoices, normalizeAnswer, shuffle, spea
 import { makeWordFamilyChoices } from "./lib/wordFamilies";
 import {
   createDeck, createStudentAccounts, deleteDeck, deleteRoster, deleteOrphanedRosters, getCurrentAccount, isSupabaseConfigured,
-  loadLibrary, loadRosterWorkbook, loadRosters, loadStudentResults, loadStudents,
+  loadLibrary, loadRosterWorkbook, loadRosters, loadStudentResults, loadStudents, LEGACY_INITIAL_PASSWORDS,
   resetStudentPasswords, saveStudySession, signIn, signOut, changeStudentPassword,
   updateDeckPracticeMode, updateDeckClassAccess, updateDeckLockAt, updateDeckMaxAttempts,
   updateDeckExamMode, updateDeckTimeLimit, updateDeckWords, updateDeckShuffle,
@@ -1362,7 +1362,10 @@ export function App() {
         ? generatedRoster
         : await loadRosterWorkbook(rosterId);
 
-      const rosterStudents = students.filter((s) => s.rosterId === rosterId);
+      const rosterStudents = students.filter((s) => s.rosterId === rosterId).map((s) => ({
+        ...s,
+        initialPassword: s.initialPassword || LEGACY_INITIAL_PASSWORDS[s.username] || null,
+      }));
       if (!rosterStudents.length) {
         showToast("Không tìm thấy học sinh nào trong danh sách này.");
         return;
@@ -2461,7 +2464,7 @@ export function InstructorView({ students, rosters, studentResults, decks = [], 
                     const practiceCount = practiceCountByStudent.get(student.id) || 0;
                     const issue = formatViolationText(result);
                     const badgeClass = getViolationBadgeClass(result);
-                    const rawPassword = student.initialPassword || generatedAccountMap.get(student.username) || generatedAccountMap.get(student.id);
+                    const rawPassword = student.initialPassword || LEGACY_INITIAL_PASSWORDS[student.username] || generatedAccountMap.get(student.username) || generatedAccountMap.get(student.id);
                     const currentPassword = student.currentPassword;
                     const hasChanged = Boolean(student.hasChangedPassword && currentPassword);
                     const isSelected = selectedStudentId === student.id;
