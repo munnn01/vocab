@@ -95,6 +95,8 @@ function escapeXml(value) {
 
 function normalizeHeader(value) {
   return String(value || "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
@@ -256,45 +258,63 @@ export async function parseStudentRosterXlsx(file) {
   if (!sheetBytes) throw new Error("Trang tính đầu tiên không có dữ liệu.");
   const sharedStrings = parseSharedStrings(files);
   const rows = readRows(strFromU8(sheetBytes), sharedStrings);
-  const nameHeaders = new Set([
+  const fullNameHeaders = new Set([
     "ho va ten", "ho ten", "ten sinh vien", "sinh vien",
-    "full name", "name", "ho ten hoc sinh", "ho va ten hoc sinh",
-    "ten hoc sinh", "hoc sinh",
+    "full name", "name", "student name", "ho ten hoc sinh", "ho va ten hoc sinh",
+    "ten hoc sinh", "hoc sinh", "ho va ten hoc vien", "ho ten hoc vien", "ten hoc vien", "hoc vien",
+  ]);
+  const firstNameHeaders = new Set([
+    "ten", "first name", "firstname",
+  ]);
+  const surnameHeaders = new Set([
+    "ho va ten dem", "ho va dem", "ho dem", "ho lot", "ho", "last name", "lastname", "surname",
   ]);
   const classHeaders = new Set(["lop", "ten lop", "ma lop", "class", "lop hoc"]);
   let headerRow;
   let nameColumn = 0;
+  let surnameColumn = 0;
   let classColumn = 0;
 
   for (const row of rows.filter((item) => item.rowNumber <= 20)) {
-    let candidateNameColumn = 0;
+    let candidateFullNameColumn = 0;
+    let candidateFirstNameColumn = 0;
+    let candidateSurnameColumn = 0;
     let candidateClassColumn = 0;
     for (const [column, value] of row.cells) {
       const normalized = normalizeHeader(value);
-      if (nameHeaders.has(normalized)) candidateNameColumn = column;
+      if (fullNameHeaders.has(normalized)) candidateFullNameColumn = column;
+      if (firstNameHeaders.has(normalized)) candidateFirstNameColumn = column;
+      if (surnameHeaders.has(normalized)) candidateSurnameColumn = column;
       if (classHeaders.has(normalized)) candidateClassColumn = column;
     }
-    if (candidateNameColumn) {
+    if (candidateFullNameColumn || candidateFirstNameColumn) {
       headerRow = row;
-      nameColumn = candidateNameColumn;
+      nameColumn = candidateFullNameColumn || candidateFirstNameColumn;
+      surnameColumn = candidateSurnameColumn;
       classColumn = candidateClassColumn;
       break;
     }
   }
 
   if (!headerRow || !nameColumn) {
-    throw new Error('Không tìm thấy cột “Họ và tên”. Hãy đặt tiêu đề cột là “Họ và tên”.');
+    throw new Error('Không tìm thấy cột “Họ và tên” hoặc “Tên”. Hãy đặt tiêu đề cột là “Họ và tên” hoặc “Tên”.');
   }
 
   const students = rows
-    .filter((row) => row.rowNumber > headerRow.rowNumber && row.cells.get(nameColumn))
-    .map((row) => ({
-      displayName: row.cells.get(nameColumn).slice(0, 120),
-      className: (classColumn ? row.cells.get(classColumn) : "")?.slice(0, 80) || "",
-      rowNumber: row.rowNumber,
-    }));
+    .filter((row) => row.rowNumber > headerRow.rowNumber && (row.cells.get(nameColumn) || (surnameColumn && row.cells.get(surnameColumn))))
+    .map((row) => {
+      const surname = surnameColumn ? (row.cells.get(surnameColumn) || "") : "";
+      const firstName = row.cells.get(nameColumn) || "";
+      const displayName = (surname ? `${surname} ${firstName}`.trim() : firstName).slice(0, 120);
+      return {
+        displayName,
+        className: (classColumn ? row.cells.get(classColumn) : "")?.slice(0, 80) || "",
+        rowNumber: row.rowNumber,
+      };
+    })
+    .filter((student) => Boolean(student.displayName));
 
-  if (!students.length) throw new Error("File Excel chưa có học sinh bên dưới cột Họ và tên.");
+  if (!students.length) throw new Error("File Excel chưa có học sinh bên dưới cột Họ và tên (hoặc Tên).");
   if (students.length > MAX_STUDENTS) throw new Error(`Mỗi lần chỉ nhập tối đa ${MAX_STUDENTS} học sinh.`);
 
   return {

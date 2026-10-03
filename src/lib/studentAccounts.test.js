@@ -48,6 +48,36 @@ describe("student roster helpers", () => {
     ]);
   });
 
+  it("reads student names when column header is 'Tên'", async () => {
+    const bytes = zipSync({
+      "xl/workbook.xml": strToU8('<?xml version="1.0"?><workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Danh sách 12A2" sheetId="1" r:id="rId1"/></sheets></workbook>'),
+      "xl/_rels/workbook.xml.rels": strToU8('<?xml version="1.0"?><Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>'),
+      "xl/sharedStrings.xml": strToU8('<?xml version="1.0"?><sst><si><t>STT</t></si><si><t>Tên</t></si><si><t>Lớp</t></si><si><t>Lê Văn Hoàng</t></si><si><t>12A2</t></si></sst>'),
+      "xl/worksheets/sheet1.xml": strToU8('<?xml version="1.0"?><worksheet><dimension ref="A1:C2"/><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c><c r="C1" t="s"><v>2</v></c></row><row r="2"><c r="A2"><v>1</v></c><c r="B2" t="s"><v>3</v></c><c r="C2" t="s"><v>4</v></c></row></sheetData></worksheet>'),
+    });
+    const file = new Blob([bytes]);
+    Object.defineProperty(file, "name", { value: "danh-sach-12a2.xlsx" });
+    const parsed = await parseStudentRosterXlsx(file);
+    expect(parsed.students).toEqual([
+      { displayName: "Lê Văn Hoàng", className: "12A2", rowNumber: 2 },
+    ]);
+  });
+
+  it("combines surname and first name when separate 'Họ và tên đệm' and 'Tên' columns exist", async () => {
+    const bytes = zipSync({
+      "xl/workbook.xml": strToU8('<?xml version="1.0"?><workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Lớp 12A3" sheetId="1" r:id="rId1"/></sheets></workbook>'),
+      "xl/_rels/workbook.xml.rels": strToU8('<?xml version="1.0"?><Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>'),
+      "xl/sharedStrings.xml": strToU8('<?xml version="1.0"?><sst><si><t>STT</t></si><si><t>Họ và tên đệm</t></si><si><t>Tên</t></si><si><t>Lớp</t></si><si><t>Phạm Thị</t></si><si><t>Hương</t></si><si><t>12A3</t></si></sst>'),
+      "xl/worksheets/sheet1.xml": strToU8('<?xml version="1.0"?><worksheet><dimension ref="A1:D2"/><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c><c r="C1" t="s"><v>2</v></c><c r="D1" t="s"><v>3</v></c></row><row r="2"><c r="A2"><v>1</v></c><c r="B2" t="s"><v>4</v></c><c r="C2" t="s"><v>5</v></c><c r="D2" t="s"><v>6</v></c></row></sheetData></worksheet>'),
+    });
+    const file = new Blob([bytes]);
+    Object.defineProperty(file, "name", { value: "danh-sach-12a3.xlsx" });
+    const parsed = await parseStudentRosterXlsx(file);
+    expect(parsed.students).toEqual([
+      { displayName: "Phạm Thị Hương", className: "12A3", rowNumber: 2 },
+    ]);
+  });
+
   it("creates unique credentials for the imported students", () => {
     const students = [
       { displayName: "Nguyễn Thùy Tâm", className: "12A1", rowNumber: 2 },
