@@ -521,13 +521,12 @@ export function App() {
       if (account?.role === "student") {
         if (suppressFullscreenPenaltyRef.current) return;
         window.clearTimeout(answerTimerRef.current);
-        const nextVio = (study.violationCount || 0) + 1;
-        const newScore = nextVio === 1 ? Math.max(0, Math.round(study.score * 0.75)) : Math.max(0, Math.round(study.score * 0.25));
-        const leaveDetail = `Rời bài thi sớm (Touchpad/Back - Phạm lỗi lần ${nextVio}: Trừ ${nextVio === 1 ? "25%" : "75%"} điểm)`;
-        finishStudy({ ...study, score: newScore, violationCount: nextVio, violationReason: leaveDetail }, false, leaveDetail);
+        const finalScore = study.score;
+        const leaveDetail = `Rời bài thi sớm (Touchpad/Back - Điểm xác nhận: ${finalScore})`;
+        finishStudy({ ...study, score: finalScore, violationReason: leaveDetail }, false, leaveDetail);
         setLeaveDialog(false);
-        setView("deck");
-        showToast(`Phát hiện thao tác quay lại: trừ ${nextVio === 1 ? "25%" : "75%"} điểm và kết thúc bài.`);
+        setView("results");
+        showToast(`Phát hiện thao tác quay lại: Điểm số của bạn được xác nhận tại thời điểm này (${finalScore} điểm).`);
       } else {
         setLeaveDialog(true);
         window.history.pushState({ vocabStudyGuard: true }, "", window.location.href);
@@ -991,19 +990,13 @@ export function App() {
   function confirmLeaveStudy() {
     if (!study) return;
     window.clearTimeout(answerTimerRef.current);
-    const nextVio = (study.violationCount || 0) + 1;
-    let newScore = study.score;
-    if (nextVio === 1) {
-      newScore = Math.max(0, Math.round(study.score * 0.75));
-    } else {
-      newScore = Math.max(0, Math.round(study.score * 0.25));
-    }
-    const leaveDetail = `Rời bài thi sớm (Phạm lỗi lần ${nextVio}: Trừ ${nextVio === 1 ? "25%" : "75%"} điểm)`;
-    const penalized = { ...study, score: newScore, violationCount: nextVio, violationReason: leaveDetail };
+    const finalScore = study.score;
+    const leaveDetail = `Rời bài thi sớm (Điểm xác nhận: ${finalScore})`;
+    const penalized = { ...study, score: finalScore, violationReason: leaveDetail };
     finishStudy(penalized, false, leaveDetail);
     setLeaveDialog(false);
-    setView(canManage ? "create-deck" : "deck");
-    showToast(`Đã rời phiên sớm (phạm lỗi lần ${nextVio}): trừ ${nextVio === 1 ? "25%" : "75%"} số điểm.`);
+    setView("results");
+    showToast(`Đã rời phiên. Điểm của bạn được xác nhận tại thời điểm này: ${finalScore} điểm.`);
   }
 
   async function toggleFullscreen() {
@@ -1725,7 +1718,10 @@ export function App() {
               onAnswer={answerCurrent}
               onInput={(input) => setStudy((current) => ({ ...current, input }))}
               onTypingSubmit={submitTyping}
-              onTimeUp={() => finishStudy(study, false, "Hết giờ làm bài")}
+              onTimeUp={() => {
+                finishStudy(study, false, "Hết giờ làm bài");
+                setView("results");
+              }}
             />
           )}
           {view === "results" && lastResult && (
@@ -1776,11 +1772,11 @@ export function App() {
           <div className="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="leave-title" onMouseDown={(event) => event.stopPropagation()}>
             <button className="dialog-close" type="button" onClick={() => setLeaveDialog(false)} aria-label="Đóng"><X size={18} /></button>
             <div className="warning-icon"><CircleAlert size={25} /></div>
-            <h2 id="leave-title">Rời phiên học?</h2>
-            <p>Phiên chưa hoàn thành. Nếu rời bây giờ, bạn sẽ bị trừ <strong>5 điểm</strong> và tiến độ dở dang được ghi lại.</p>
+            <h2 id="leave-title">Rời phiên làm bài?</h2>
+            <p>Phiên chưa hoàn thành tất cả câu hỏi. Nếu rời bây giờ, điểm số của bạn sẽ được <strong>xác nhận tại thời điểm này ({study?.score || 0} điểm)</strong> và lưu lại tiến độ.</p>
             <div className="dialog-actions">
-              <button className="secondary-button" type="button" onClick={() => setLeaveDialog(false)}>Học tiếp</button>
-              <button className="danger-button" type="button" onClick={confirmLeaveStudy}>Rời và trừ điểm</button>
+              <button className="secondary-button" type="button" onClick={() => setLeaveDialog(false)}>Làm tiếp</button>
+              <button className="danger-button" type="button" onClick={confirmLeaveStudy}>Rời và xác nhận điểm</button>
             </div>
           </div>
         </div>
@@ -3994,7 +3990,7 @@ export function StudyView({ study, currentWord, quizChoices, wordFamilyChoices, 
 
       <p className="penalty-reminder-note">
         {study.isExamMode !== false
-          ? "* Quy tắc tính điểm & phạm lỗi: Lần đầu phạm lỗi trừ 25% số điểm, lần hai trừ 75% số điểm, lần ba 0 điểm. Rời bài sớm hoặc thoát toàn màn hình cũng bị trừ theo quy tắc này."
+          ? "* Quy tắc tính điểm: Vi phạm quy chế thi (thoát toàn màn hình, chuyển ứng dụng / tab) lần 1 trừ 25% điểm, lần 2 trừ 75% điểm, lần 3 hủy bài (0 điểm). Khi rời bài sớm, điểm được xác nhận theo kết quả đã làm."
           : "* Chế độ luyện tập: Bạn có thể vừa làm vừa ôn bài thoải mái mà không bị trừ điểm vi phạm toàn màn hình."}
       </p>
     </div>
