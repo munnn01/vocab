@@ -550,7 +550,10 @@ export function App() {
       showToast("Giáo viên chỉ thiết lập bài; tài khoản học sinh mới có thể làm bài.");
       return;
     }
-    const wordsToStudy = overrideWords || selectedDeck?.words || [];
+    const deckWords = Array.isArray(selectedDeck?.words) ? selectedDeck.words : [];
+    const wordsToStudy = (Array.isArray(overrideWords) && overrideWords.length > 0)
+      ? overrideWords
+      : deckWords;
     if (!wordsToStudy.length) {
       showToast("Bộ từ này chưa có từ để học.");
       return;
@@ -613,7 +616,9 @@ export function App() {
   }, [account, selectedDeck, sessions, showToast]);
 
   const handlePracticeMistakes = useCallback((wordsToPractice = null) => {
-    const list = wordsToPractice || getSavedMistakes(selectedDeck?.id);
+    const list = (Array.isArray(wordsToPractice) && wordsToPractice.length > 0)
+      ? wordsToPractice
+      : getSavedMistakes(selectedDeck?.id);
     if (!list || !list.length) {
       showToast("Không có từ sai nào để ôn lại.");
       return;
@@ -1642,7 +1647,7 @@ export function App() {
               isDeletingDeck={isDeletingDeck}
               importProgress={importProgress}
               onPickPdf={() => fileInputRef.current?.click()}
-              onStart={startStudy}
+              onStart={() => startStudy()}
               onModeChange={handleDeckPracticeMode}
               onClassAccessChange={handleDeckClassAccess}
               onLockAtChange={handleDeckLockAt}
@@ -1653,7 +1658,7 @@ export function App() {
               onDeleteDeck={(deck) => setDeckToDelete(deck)}
               onEditDeck={(deck) => setDeckToEdit(deck)}
               onFlashcard={() => setView("flashcard")}
-              onPracticeMistakes={handlePracticeMistakes}
+              onPracticeMistakes={() => handlePracticeMistakes()}
               savedMistakesCount={getSavedMistakes(selectedDeck?.id).length}
               onNavigateCreateDeck={() => setView("create-deck")}
             />
@@ -1728,9 +1733,9 @@ export function App() {
               result={lastResult}
               maxAttempts={selectedDeck?.maxAttempts}
               practiceCount={(sessions || []).filter((s) => s.deck_id === selectedDeck?.id).length}
-              onAgain={startStudy}
+              onAgain={() => startStudy()}
               onHome={() => setView(canManage ? "create-deck" : "deck")}
-              onPracticeMistakes={handlePracticeMistakes}
+              onPracticeMistakes={(words) => handlePracticeMistakes(words)}
             />
           )}
         </section>
@@ -3499,7 +3504,7 @@ function HomeView({
               <ChevronRight size={18} />
             </button>
             {savedMistakesCount > 0 && (
-              <button className="prep-action-card mistakes-prep" type="button" onClick={onPracticeMistakes}>
+              <button className="prep-action-card mistakes-prep" type="button" onClick={() => onPracticeMistakes && onPracticeMistakes()}>
                 <div className="prep-icon"><AlertTriangle size={24} /></div>
                 <div className="prep-text">
                   <strong>Ôn lại {savedMistakesCount} từ hay sai</strong>
@@ -3521,7 +3526,7 @@ function HomeView({
                 : "Luyện tập tự do · Không trừ điểm vi phạm"}
             </span>
           </div>
-          <button className={`mode-card assigned-mode-card ${assignedMode.accent}`} type="button" onClick={onStart}>
+          <button className={`mode-card assigned-mode-card ${assignedMode.accent}`} type="button" onClick={() => onStart && onStart()}>
             <span className="mode-icon"><AssignedIcon size={25} /></span>
             <span className="mode-copy">
               <b>{deck.isExamMode !== false ? `Bắt đầu ${assignedMode.title.toLowerCase()} (Kiểm tra)` : `Bắt đầu ${assignedMode.title.toLowerCase()} (Luyện tập)`}</b>
